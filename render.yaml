@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: buildwise-gh
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: buildwise-gh-db
+          property: connectionString
+  
+# The paid, smallest Postgres plan avoids the 30-day expiry of Render's free
+# database. Review the current Render price and choose a different plan if needed.
+databases:
+  - name: buildwise-gh-db
+    databaseName: construction_ai
+    user: construction_ai
+    plan: 0.1c-256mb

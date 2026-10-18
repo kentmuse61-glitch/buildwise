@@ -1,0 +1,19 @@
+{
+  "code_reference": "Conceptual starter checks based on user-supplied example values; not an authoritative extract of Ghanaian regulations.",
+  "min_room_area_sqm": 9.0,
+  "min_room_width_m": 2.7,
+  "min_ceiling_height_m": 2.7,
+  "max_floors_residential": 4,
+  "max_floors_commercial": 12,
+  "max_floors_institutional": 6,
+  "min_setback_front_m": 6.0,
+  "min_setback_side_m": 3.0,
+  "min_setback_rear_m": 4.5,
+  "min_window_area_ratio": 0.1,
+  "mandatory": ["fire_escape", "drainage", "septic_or_pit", "rain_water_harvesting"],
+  "zoning_notes": {
+    "Accra": "Confirm zoning and setbacks with the relevant local planning authority.",
+    "Kumasi": "Confirm zoning and setbacks with the relevant local planning authority.",
+    "Tamale": "Confirm zoning and setbacks with the relevant local planning authority."
+  }
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10231f">
+  <meta name="description" content="Early-stage Ghana construction concept planning, cost estimation and project scheduling workspace.">
+  <title>Buildwise GH — Construction AI</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/viewer3d.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-showcase">
+      <div class="brand brand-large">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">Buildwise <b>GH</b><small>CONSTRUCTION AI</small></span>
+      </div>
+      <div class="auth-message">
+        <span class="eyebrow eyebrow-light">IDEA → CONCEPT → PLAN</span>
+        <h1>Build with a clearer starting point.</h1>
+        <p>Turn a short brief into a Ghana-focused concept plan, a rough cost view and a first-pass project timeline.</p>
+      </div>
+      <div class="auth-visual" aria-hidden="true">
+        <div class="visual-sun"></div>
+        <div class="visual-building building-back"><i></i><i></i><i></i><i></i></div>
+        <div class="visual-building building-front"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="visual-ground"></div>
+        <div class="visual-caption"><span class="visual-dot"></span> A practical first sketch, not a final design</div>
+      </div>
+      <div class="auth-footnote">Built for early planning in Ghana <span>·</span> GHS estimates <span>·</span> Concept-level outputs</div>
+    </div>
+
+    <div class="auth-side">
+      <div class="auth-card">
+        <div class="auth-card-brand brand">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="brand-name">Buildwise <b>GH</b><small>CONSTRUCTION AI</small></span>
+        </div>
+        <div class="auth-intro">
+          <span class="eyebrow" id="auth-eyebrow">YOUR PROJECT WORKSPACE</span>
+          <h2 id="auth-heading">Welcome back</h2>
+          <p id="auth-subheading">Sign in to see your projects and continue planning.</p>
+        </div>
+        <form id="auth-form" autocomplete="on">
+          <label class="form-field" id="company-field-wrap" hidden>
+            <span>Company name <small>Optional</small></span>
+            <input id="auth-company" type="text" maxlength="200" autocomplete="organization" placeholder="Your company">
+          </label>
+          <label class="form-field" id="email-field-wrap" hidden>
+            <span>Email address</span>
+            <input id="auth-email" type="email" maxlength="100" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <label class="form-field">
+            <span>Username</span>
+            <input id="auth-username" name="username" type="text" minlength="3" maxlength="50" required autocomplete="username" placeholder="Your username">
+          </label>
+          <label class="form-field">
+            <span>Password</span>
+            <input id="auth-password" name="password" type="password" minlength="8" maxlength="72" required autocomplete="current-password" placeholder="At least 8 characters">
+          </label>
+          <div id="auth-error" class="form-error" role="alert" hidden></div>
+          <button id="auth-submit" class="button button-primary button-full" type="submit">Sign in <span aria-hidden="true">→</span></button>
+        </form>
+        <div class="auth-switch-row">
+          <span id="auth-switch-label">New to Buildwise?</span>
+          <button id="auth-switch" class="text-button" type="button">Create an account</button>
+        </div>
+        <p class="auth-disclaimer">Your projects are private to your account. Estimates and layouts are early planning aids, not professional advice.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="workspace" class="workspace hidden">
+    <aside id="sidebar" class="sidebar">
+      <a class="brand sidebar-brand" href="#overview" aria-label="Buildwise GH home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">Buildwise <b>GH</b><small>CONSTRUCTION AI</small></span>
+      </a>
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav class="side-nav" aria-label="Main navigation">
+        <button class="nav-item active" type="button" data-view="overview"><span class="nav-glyph">⌂</span><span>Overview</span></button>
+        <button class="nav-item" type="button" data-view="create"><span class="nav-glyph nav-plus">＋</span><span>New concept</span></button>
+        <button class="nav-item" type="button" data-view="projects"><span class="nav-glyph">▤</span><span>My projects</span><span id="nav-project-count" class="nav-count">0</span></button>
+        <button class="nav-item" type="button" data-view="contractors"><span class="nav-glyph">⌕</span><span>Contractor directory</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note"><span class="note-icon">✦</span><div><strong>Concept-stage tools</strong><p>Review every output with qualified local professionals.</p></div></div>
+        <div class="profile-row">
+          <div id="user-avatar" class="avatar">B</div>
+          <div class="profile-copy"><strong id="user-label">Your account</strong><span>Ghana workspace</span></div>
+          <button id="logout-btn" class="icon-button logout-button" type="button" aria-label="Sign out" title="Sign out">↗</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button id="mobile-menu-toggle" class="mobile-menu icon-button" type="button" aria-label="Open navigation">☰</button>
+        <div class="topbar-title"><span id="page-eyebrow" class="eyebrow">YOUR WORKSPACE</span><h1 id="page-title">Overview</h1></div>
+        <div class="topbar-actions">
+          <span class="topbar-location"><span class="location-dot"></span> Ghana</span>
+          <button class="button button-primary topbar-new" type="button" data-view="create"><span>＋</span> New concept</button>
+        </div>
+      </header>
+      <div id="view-content" class="view-content"></div>
+      <footer class="app-footer"><span>Buildwise GH <span class="footer-dot">·</span> Construction AI MVP</span><span>Concept tools only — verify with local professionals.</span></footer>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

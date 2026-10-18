@@ -1,0 +1,32 @@
+{
+  "rate_note": "Starter values supplied with this MVP; not independently verified and not a live market quote. Update with local quantity-surveyor and supplier data before relying on estimates.",
+  "currency": "GHS",
+  "base_cost_per_sqm": {
+    "Accra": 1800,
+    "Tema": 1850,
+    "Kumasi": 1650,
+    "Tamale": 1500,
+    "Cape Coast": 1700,
+    "Takoradi": 1600,
+    "Ho": 1550,
+    "Koforidua": 1550,
+    "Obuasi": 1600,
+    "Bolgatanga": 1450,
+    "Aflao": 1500
+  },
+  "cost_allocation": {
+    "materials": 0.52,
+    "labour": 0.28,
+    "professional_fees": 0.08,
+    "contingency": 0.12
+  },
+  "materials_breakdown": [
+    {"name": "Cement, blocks & concrete", "share_of_materials": 0.34},
+    {"name": "Reinforcement steel", "share_of_materials": 0.15},
+    {"name": "Roofing", "share_of_materials": 0.10},
+    {"name": "Sand & aggregates", "share_of_materials": 0.14},
+    {"name": "Plumbing", "share_of_materials": 0.07},
+    {"name": "Electrical", "share_of_materials": 0.07},
+    {"name": "Doors, windows & finishes", "share_of_materials": 0.13}
+  ]
+}
