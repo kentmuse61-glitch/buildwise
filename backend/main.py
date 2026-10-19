@@ -105,6 +105,7 @@ class ProjectRequest(BaseModel):
     name: str | None = Field(default=None, max_length=120)
     location: str | None = Field(default=None, max_length=100)
     budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
+    apply_bathroom_template: bool = False
 
 
 class ContractorQuery(BaseModel):
@@ -272,6 +273,9 @@ def generate_project(
         spec["location"] = req.location.strip()
     if req.budget is not None:
         spec["budget_constraint"] = req.budget
+    # This is a user-selected concept template. It is kept separate from the
+    # preliminary compliance screen and never represents a permit conclusion.
+    spec = plan_gen.prepare_residential_guidance(spec, req.apply_bathroom_template)
 
     compliance_result = compliance.check(spec)
     cost_result = _estimate_cost(spec)

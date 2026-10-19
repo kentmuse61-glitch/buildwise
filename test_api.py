@@ -39,10 +39,13 @@ class ProjectApiTests(unittest.TestCase):
             "description": "A 3-bedroom, 2-bathroom bungalow in Kumasi, 160 sqm with a porch.",
             "location": "Kumasi",
             "budget": 500000,
+            "apply_bathroom_template": True,
         })
         self.assertEqual(response.status_code, 200, response.text)
         project = response.json()
         self.assertEqual(project["name"], "Adum Family Home")
+        self.assertEqual(project["spec"]["bathrooms"], 3)
+        self.assertTrue(project["spec"]["planning_guidance"]["applied_bathroom_template"])
 
         csv_response = self.client.get(f"/api/projects/{project['id']}/artifacts/cost.csv", headers=self.headers)
         self.assertEqual(csv_response.status_code, 200, csv_response.text)

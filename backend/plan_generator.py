@@ -49,6 +49,60 @@ class PlanGenerator:
     def _safe_id(value: str | int) -> str:
         return re.sub(r"[^A-Za-z0-9_-]", "", str(value))[:48] or "project"
 
+    def prepare_residential_guidance(
+        self,
+        spec: dict[str, Any],
+        apply_bathroom_template: bool = False,
+    ) -> dict[str, Any]:
+        """Attach transparent Ghana-focused residential planning guidance.
+
+        This is a user-selectable concept template, not a Ghana Building Code
+        check and never a permit, architectural, or professional design result.
+        """
+        prepared = dict(spec)
+        building_type = str(prepared.get("building_type") or "residential").strip().lower()
+        if building_type != "residential":
+            return prepared
+
+        bedrooms = self._positive_int(prepared.get("bedrooms"), default=2, minimum=0, maximum=40)
+        entered_bathrooms = self._positive_int(prepared.get("bathrooms"), default=1, minimum=0, maximum=40)
+        suggested_bathrooms = self._suggested_sanitary_spaces(bedrooms)
+        applied_bathrooms = max(entered_bathrooms, suggested_bathrooms) if apply_bathroom_template else entered_bathrooms
+        if apply_bathroom_template:
+            prepared["bathrooms"] = applied_bathrooms
+            minimum_room_count = bedrooms + applied_bathrooms + 5
+            prepared["rooms_total"] = max(
+                self._positive_int(prepared.get("rooms_total"), default=minimum_room_count, minimum=2, maximum=60),
+                minimum_room_count,
+            )
+
+        notes = [
+            "Organises public living spaces separately from the bedroom zone.",
+            "Includes a front veranda, living, dining, kitchen, store and a circulation zone in the visual concept.",
+            "Uses a master-ensuite and shared-sanitary-space layout convention where the selected bathroom count allows.",
+        ]
+        if entered_bathrooms < suggested_bathrooms:
+            notes.insert(0, f"Template suggests {suggested_bathrooms} sanitary space{'s' if suggested_bathrooms != 1 else ''} for {bedrooms} bedroom{'s' if bedrooms != 1 else ''}; your brief requested {entered_bathrooms}.")
+        if apply_bathroom_template and applied_bathrooms > entered_bathrooms:
+            notes.insert(0, f"Applied your selected planning template: sanitary spaces increased from {entered_bathrooms} to {applied_bathrooms}.")
+
+        prepared["planning_guidance"] = {
+            "profile": "Ghana-focused residential planning template",
+            "applied_bathroom_template": bool(apply_bathroom_template),
+            "entered_bathrooms": entered_bathrooms,
+            "suggested_bathrooms": suggested_bathrooms,
+            "notes": notes,
+            "disclaimer": "Planning suggestions only. They are not a Ghana Building Code determination, professional design, or permit approval.",
+        }
+        return prepared
+
+    @staticmethod
+    def _suggested_sanitary_spaces(bedrooms: int) -> int:
+        """Return a configurable design-template suggestion, not a legal requirement."""
+        if bedrooms <= 1:
+            return 1
+        return max(2, math.ceil(bedrooms / 2) + 1)
+
     def build_svg(self, spec: dict[str, Any]) -> str:
         """Public compatibility method used by the test suite and API."""
         return self._build_svg(spec)
@@ -106,6 +160,13 @@ class PlanGenerator:
             {"x": str(canvas_width // 2), "y": "66", "text-anchor": "middle", "class": "subtitle"},
             f"{floors} floor{'s' if floors != 1 else ''} · {location} · schematic only",
         )
+        guidance = spec.get("planning_guidance") if isinstance(spec.get("planning_guidance"), dict) else {}
+        if guidance.get("profile"):
+            element(
+                "text",
+                {"x": str(canvas_width // 2), "y": "88", "text-anchor": "middle", "class": "subtitle"},
+                "Ghana-focused planning template · not a code or permit approval",
+            )
 
         for room in rooms:
             x = room["x"] * scale + offset_x
@@ -154,39 +215,85 @@ class PlanGenerator:
         return svg.toprettyxml(indent="  ")
 
     def _layout_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        """Lay out rooms on a non-overlapping grid with reasonable defaults."""
+        """Choose the residential planning template or a neutral room grid."""
+        building_type = str(spec.get("building_type") or "residential").strip().lower()
+        if building_type == "residential":
+            return self._layout_ghana_residential_rooms(spec)
+
         bedrooms = self._positive_int(spec.get("bedrooms"), default=2, minimum=0, maximum=40)
         bathrooms = self._positive_int(spec.get("bathrooms"), default=1, minimum=0, maximum=40)
         minimum_rooms = bedrooms + bathrooms + 2
-        requested_total = self._positive_int(spec.get("rooms_total"), default=minimum_rooms, minimum=2, maximum=60)
-        total = max(minimum_rooms, requested_total)
-
+        total = max(
+            minimum_rooms,
+            self._positive_int(spec.get("rooms_total"), default=minimum_rooms, minimum=2, maximum=60),
+        )
         room_types = ["living", "kitchen"]
         room_types.extend(f"bedroom_{number + 1}" for number in range(bedrooms))
         room_types.extend(f"bathroom_{number + 1}" for number in range(bathrooms))
         extras = ["dining", "storage", "utility", "laundry"]
         while len(room_types) < total:
             room_types.append(extras[(len(room_types) - 2) % len(extras)])
+        return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
 
+    def _layout_ghana_residential_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+        """Make a transparent, Ghana-focused residential concept layout.
+
+        The sequence represents common planning conventions rather than drawing
+        actual doors, accessibility clearances, services, walls, or approvals.
+        """
+        bedrooms = self._positive_int(spec.get("bedrooms"), default=2, minimum=0, maximum=40)
+        bathrooms = self._positive_int(spec.get("bathrooms"), default=1, minimum=0, maximum=40)
+        room_types = ["veranda_front", "living", "dining", "kitchen", "store", "corridor"]
+        room_types.extend(f"bedroom_{number + 1}" for number in range(bedrooms))
+        if bathrooms > 0 and bedrooms > 0:
+            room_types.append("ensuite_1")
+        remaining_sanitary_spaces = max(0, bathrooms - (1 if bathrooms > 0 and bedrooms > 0 else 0))
+        guidance = spec.get("planning_guidance") if isinstance(spec.get("planning_guidance"), dict) else {}
+        has_template_visitor_wc = bool(guidance.get("applied_bathroom_template")) and bathrooms >= 3 and remaining_sanitary_spaces > 0
+        common_spaces = remaining_sanitary_spaces - (1 if has_template_visitor_wc else 0)
+        room_types.extend(f"bathroom_common_{number + 1}" for number in range(common_spaces))
+        if has_template_visitor_wc:
+            room_types.append("wc_visitor")
+        if bedrooms >= 3:
+            room_types.append("veranda_back")
+        return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
+
+    @staticmethod
+    def _records_for_types(room_types: list[str]) -> list[dict[str, Any]]:
         labels = {
-            "living": "Living", "kitchen": "Kitchen", "dining": "Dining", "storage": "Storage",
-            "utility": "Utility", "laundry": "Laundry",
+            "living": "Living room", "kitchen": "Kitchen", "dining": "Dining area", "store": "Store / pantry",
+            "utility": "Utility", "laundry": "Laundry", "corridor": "Private corridor", "veranda_front": "Front veranda",
+            "veranda_back": "Back veranda", "wc_visitor": "Visitor WC",
         }
-        preferred_sizes = {
-            "living": (8.0, 6.0), "kitchen": (5.0, 4.0), "dining": (6.0, 5.0),
-            "storage": (3.0, 3.0), "utility": (3.5, 3.5), "laundry": (3.0, 3.0),
+        dimensions = {
+            "living": (6.0, 5.0), "kitchen": (3.5, 3.0), "dining": (4.5, 3.5), "store": (2.2, 2.0),
+            "utility": (3.5, 3.5), "laundry": (3.0, 3.0), "corridor": (5.5, 1.5), "veranda": (5.5, 2.0),
+            "bedroom": (4.0, 3.5), "ensuite": (2.2, 2.0), "bathroom": (2.5, 2.2), "wc": (1.6, 1.5),
         }
         records: list[dict[str, Any]] = []
-        columns = min(3, max(1, len(room_types)))
-        rows = math.ceil(len(room_types) / columns)
-        for index, room_type in enumerate(room_types):
+        for room_type in room_types:
             prefix = room_type.split("_", 1)[0]
-            width, height = preferred_sizes.get(prefix, (5.0 if prefix == "bedroom" else 3.2, 4.5 if prefix == "bedroom" else 3.0))
-            label = labels.get(prefix, prefix.title())
-            if "_" in room_type and prefix in {"bedroom", "bathroom"}:
-                label = f"{label} {room_type.rsplit('_', 1)[1]}"
-            records.append({"type": room_type, "label": label, "w": width, "h": height, "row": index // columns, "col": index % columns})
+            width, height = dimensions.get(prefix, (3.0, 3.0))
+            label = labels.get(room_type, labels.get(prefix, prefix.title()))
+            if room_type == "bedroom_1":
+                label, width, height = "Master bedroom", 4.5, 4.0
+            elif room_type.startswith("bedroom_"):
+                label = f"Bedroom {room_type.rsplit('_', 1)[1]}"
+            elif room_type.startswith("ensuite_"):
+                label = "Master ensuite"
+            elif room_type.startswith("bathroom_common_"):
+                label = f"Shared bathroom {room_type.rsplit('_', 1)[1]}"
+            records.append({"type": room_type, "label": label, "w": width, "h": height})
+        return records
 
+    @staticmethod
+    def _room_records_to_grid(records: list[dict[str, Any]], max_columns: int) -> list[dict[str, Any]]:
+        if not records:
+            return [{"type": "living", "label": "Living room", "w": 6.0, "h": 5.0, "x": 0.0, "y": 0.0}]
+        columns = min(max_columns, max(1, len(records)))
+        for index, room in enumerate(records):
+            room["row"], room["col"] = divmod(index, columns)
+        rows = math.ceil(len(records) / columns)
         column_widths = [max((room["w"] for room in records if room["col"] == column), default=1.0) for column in range(columns)]
         row_heights = [max((room["h"] for room in records if room["row"] == row), default=1.0) for row in range(rows)]
         x_positions = [sum(column_widths[:column]) for column in range(columns)]
@@ -209,7 +316,9 @@ class PlanGenerator:
     def _room_color(room_type: str) -> str:
         palette = {
             "living": "#d4edda", "dining": "#dff0e7", "kitchen": "#fff3cd", "bedroom": "#cce5ff",
-            "bathroom": "#f8d7da", "storage": "#e2e3e5", "utility": "#e2e3e5", "laundry": "#e2e3e5",
+            "bathroom": "#f8d7da", "ensuite": "#f8d7da", "wc": "#f8d7da", "store": "#e2e3e5",
+            "storage": "#e2e3e5", "utility": "#e2e3e5", "laundry": "#e2e3e5", "corridor": "#eef0ee",
+            "veranda": "#e0f2e5",
         }
         return palette.get(room_type.split("_", 1)[0], "#e2e3e5")
 

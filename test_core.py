@@ -42,6 +42,30 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
         self.assertTrue(svg.rstrip().endswith("</svg>"))
 
+    def test_ghana_focused_residential_template_is_explicitly_opt_in(self):
+        generator = PlanGenerator()
+        source = {
+            "building_type": "residential",
+            "floors": 1,
+            "bedrooms": 3,
+            "bathrooms": 2,
+            "rooms_total": 7,
+            "area_sqm": 140,
+            "location": "Kumasi",
+        }
+        suggested = generator.prepare_residential_guidance(source, apply_bathroom_template=False)
+        self.assertEqual(source["bathrooms"], 2)
+        self.assertEqual(suggested["bathrooms"], 2)
+        self.assertEqual(suggested["planning_guidance"]["suggested_bathrooms"], 3)
+        applied = generator.prepare_residential_guidance(source, apply_bathroom_template=True)
+        self.assertEqual(applied["bathrooms"], 3)
+        self.assertTrue(applied["planning_guidance"]["applied_bathroom_template"])
+        svg = generator.build_svg(applied)
+        self.assertIn("Front veranda", svg)
+        self.assertIn("Master bedroom", svg)
+        self.assertIn("Visitor WC", svg)
+        self.assertIn("not a code or permit approval", svg)
+
     def test_glb_header_and_length(self):
         with tempfile.TemporaryDirectory() as directory:
             generator = Model3DGenerator(directory)
