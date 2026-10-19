@@ -57,6 +57,13 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(self.client.get(f"/api/projects/{project['id']}", headers=self.headers).status_code, 404)
 
+    def test_security_headers_are_present(self):
+        response = self.client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-frame-options"], "DENY")
+        self.assertEqual(response.headers["referrer-policy"], "strict-origin-when-cross-origin")
+
     def test_professional_handoff_artifacts_are_private_and_escaped(self):
         response = self.client.post("/api/project/generate", headers=self.headers, json={
             "description": "A 3-bedroom, 2-bathroom bungalow in Kumasi with 145 sqm total floor area.",

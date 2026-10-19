@@ -10,7 +10,7 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 - Private user-owned project records, with optional project names and per-project deletion.
 - SQLite locally and PostgreSQL on Render.
 - Lightweight, deterministic brief parser — no large model download or paid AI API key.
-- Generated schematic SVG floor plan, downloadable glTF 2.0 binary (`.glb`) massing model, and CSV estimate export.
+- Generated schematic SVG floor plan, interactive in-browser GLB massing preview, downloadable glTF 2.0 binary (`.glb`) model, and CSV estimate export.
 - Indicative sequential project schedule with a simple seasonal planning allowance.
 - Preliminary rule-screening output with clear non-approval disclaimers.
 - High-level GHS estimate with an editable starter rate table and visible uncertainty range.
@@ -98,7 +98,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
 
-The integration tests cover registration/login, named project creation, per-user ownership, CSV export and deletion.
+The integration tests cover registration/login, named project creation, per-user ownership, CSV export and deletion. GitHub Actions also generates a representative GLB and validates it against the glTF 2.0 specification before accepting changes.
 
 ## Before production
 

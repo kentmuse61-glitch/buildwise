@@ -307,7 +307,7 @@ function projectDetailMarkup(project, embedded = false) {
     <section class="detail-summary"><div class="detail-summary-main"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span><p>${escapeHtml(project.description || spec.raw_text || "No description")}</p><div class="detail-metrics"><span class="detail-metric"><strong>${escapeHtml(spec.building_type || project.building_type || "Residential")}</strong></span><span class="detail-metric"><strong>${Number(spec.floors || project.floors || 1)}</strong> floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span><span class="detail-metric"><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong> total area</span><span class="detail-metric"><strong>${Number(spec.bedrooms || 0)}</strong> bed · <strong>${Number(spec.bathrooms || 0)}</strong> bath</span><span class="detail-metric">${escapeHtml(spec.location || project.location || "Ghana")}</span></div></div><div class="detail-cost"><span>Indicative estimate</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong><small>GHS · concept estimate</small></div></section>
     <div class="detail-grid">
       <div class="detail-column">
-        <section class="panel"><div class="panel-heading"><div><h3>3D building massing</h3><p>Drag to rotate the schematic. Download a GLB model for a compatible 3D viewer.</p></div></div><div class="model-stage"><canvas id="model-canvas" data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Interactive schematic 3D building massing"></canvas></div><div class="model-caption"><span>Concept massing only · no structural detail</span><button class="panel-link" type="button" data-action="download-model" data-project-id="${id}">Download GLB →</button></div></section>
+        <section class="panel"><div class="panel-heading"><div><h3>3D building massing</h3><p>Drag to orbit the generated GLB concept model. Use the download in a compatible 3D tool for further review.</p></div></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div><div class="model-caption"><span>Concept massing only · no structural detail</span><button class="panel-link" type="button" data-action="download-model" data-project-id="${id}">Download GLB →</button></div></section>
         <section class="panel"><div class="panel-heading"><div><h3>Schematic floor plan</h3><p>Ground-floor room blocks · approximate footprint.</p></div><a class="panel-link" href="#" data-action="download-plan" data-project-id="${id}">Download SVG →</a></div><div class="plan-stage"><img id="plan-image" alt="Schematic concept floor plan" src="" /><span class="artifact-loading" id="plan-loading">Preparing plan…</span></div></section>
         <section class="panel"><div class="panel-heading"><div><h3>First-pass project schedule</h3><p>Sequential planning timeline with an indicative seasonal allowance.</p></div><span class="meta-pill">${Number(spec.floors || project.floors || 1)} floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="schedule-container"><div class="artifact-loading">Preparing schedule…</div></div></section>
       </div>
@@ -337,8 +337,33 @@ async function openProject(projectId) {
 
 async function initProjectArtifacts(project) {
   const id = Number(project.id || project.project_id || project.db_id);
-  const canvas = $("#model-canvas");
-  if (canvas) window.drawBuilding(canvas);
+  const modelViewer = $("#model-viewer");
+  const fallbackCanvas = $("#model-canvas");
+  const modelError = $("#model-error");
+  const showFallbackModel = () => {
+    if (modelViewer) modelViewer.hidden = true;
+    if (modelError) modelError.hidden = false;
+    if (fallbackCanvas) {
+      fallbackCanvas.hidden = false;
+      window.drawBuilding(fallbackCanvas);
+    }
+  };
+  if (modelViewer) {
+    try {
+      const blob = await api(`/api/projects/${id}/artifacts/model.glb`);
+      const previousUrl = modelViewer.dataset.objectUrl;
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+      const url = URL.createObjectURL(blob);
+      modelViewer.dataset.objectUrl = url;
+      modelViewer.addEventListener("error", showFallbackModel, { once: true });
+      modelViewer.setAttribute("src", url);
+    } catch (error) {
+      showFallbackModel();
+    }
+  } else if (fallbackCanvas) {
+    fallbackCanvas.hidden = false;
+    window.drawBuilding(fallbackCanvas);
+  }
   const planImage = $("#plan-image");
   const planLoading = $("#plan-loading");
   if (planImage) {
@@ -585,7 +610,7 @@ document.addEventListener("click", async (event) => {
 
 window.addEventListener("resize", () => {
   const canvas = $("#model-canvas");
-  if (canvas) window.drawBuilding(canvas);
+  if (canvas && !canvas.hidden) window.drawBuilding(canvas);
 });
 
 boot();

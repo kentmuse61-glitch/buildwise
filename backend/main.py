@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
@@ -55,6 +55,18 @@ app = FastAPI(
     version="1.0.0",
     description="Early-stage construction concept planning tools. Generated outputs are illustrative, not professional approvals.",
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add low-risk browser protections without blocking same-origin artifacts."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    return response
+
 
 plan_gen = PlanGenerator(str(OUTPUT_DIR))
 model_3d = Model3DGenerator(str(OUTPUT_DIR))
