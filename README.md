@@ -7,9 +7,10 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 ## What's included
 
 - Account registration and sign-in with hashed passwords and short-lived bearer tokens.
-- Private user-owned project records, stored in SQLite locally and PostgreSQL on Render.
+- Private user-owned project records, with optional project names and per-project deletion.
+- SQLite locally and PostgreSQL on Render.
 - Lightweight, deterministic brief parser — no large model download or paid AI API key.
-- Generated schematic SVG floor plan and downloadable glTF 2.0 binary (`.glb`) massing model.
+- Generated schematic SVG floor plan, downloadable glTF 2.0 binary (`.glb`) massing model, and CSV estimate export.
 - Indicative sequential project schedule with a simple seasonal planning allowance.
 - Preliminary rule-screening output with clear non-approval disclaimers.
 - High-level GHS estimate with an editable starter rate table and visible uncertainty range.
@@ -71,6 +72,8 @@ Copy `.env.example` to `.env` and set:
 - `GET /api/auth/me` — current account (`Authorization: Bearer ...`).
 - `POST /api/project/generate` — generate and save a project concept (authenticated).
 - `GET /api/projects` and `GET /api/projects/{id}` — list/open your projects (authenticated).
+- `DELETE /api/projects/{id}` — delete one of your projects (authenticated).
+- `GET /api/projects/{id}/artifacts/cost.csv` — download an indicative cost allocation (authenticated).
 - `GET /api/projects/{id}/artifacts/plan.svg` — generated schematic SVG (authenticated).
 - `GET /api/projects/{id}/artifacts/model.glb` — generated massing model (authenticated).
 - `GET /api/projects/{id}/artifacts/schedule.json` — generated schedule (authenticated).
@@ -88,9 +91,14 @@ Interactive API docs: `/docs`.
 
 ## Tests
 
+Install the development test client, then run the unit and authenticated API integration suite:
+
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
+
+The integration tests cover registration/login, named project creation, per-user ownership, CSV export and deletion.
 
 ## Before production
 

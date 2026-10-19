@@ -222,11 +222,12 @@ function createMarkup() {
         <div class="panel-heading"><div><h3>Project brief</h3><p>More detail helps the concept match your intent.</p></div><span class="meta-pill">Ghana · GHS</span></div>
         <form id="create-form" class="creation-form">
           <label class="form-field"><span>What are you planning?</span><textarea id="project-description" required minlength="10" maxlength="4000" placeholder="Example: A 3-bedroom, 2-bathroom bungalow in Kumasi, about 150 sqm total floor area, cement blocks, metal roof, with a porch and solar power."></textarea><small class="form-hint">Tip: State the total floor area (all floors combined) in m² if you know it. This tool creates a concept, not permit-ready drawings.</small></label>
+          <label class="form-field"><span>Project name <small>Optional</small></span><input id="project-name" type="text" maxlength="120" placeholder="e.g. Adum Family Home"></label>
           <div class="input-grid">
             <label class="form-field"><span>Project location</span><select id="project-location">${locations.map((location, index) => `<option value="${index === 0 ? "auto" : escapeHtml(location)}" ${index === 0 ? "selected" : ""}>${escapeHtml(location)}</option>`).join("")}</select><small class="form-hint">Choose a city or use the location mentioned in your brief.</small></label>
             <label class="form-field"><span>Budget ceiling <small>Optional · GHS</small></span><input id="project-budget" type="number" min="1" step="1000" placeholder="e.g. 500000"><small class="form-hint">Used only to compare the estimate with your target.</small></label>
           </div>
-          <div class="form-actions"><span>Usually takes a few seconds. No external AI model is required.</span><button id="generate-button" class="button button-primary" type="submit">Generate concept <span>→</span></button></div>
+          <div class="form-actions"><span>Rule-based first pass; review every extracted assumption.</span><button id="generate-button" class="button button-primary" type="submit">Generate concept <span>→</span></button></div>
         </form>
       </section>
       <aside class="tip-panel"><div class="page-kicker">GET A BETTER RESULT</div><h3>Brief checklist</h3><p>Use plain English and call out anything that should shape the first concept.</p><div class="example-prompt"><strong>Example brief</strong>“A 2-storey family house in Kumasi, 4 bedrooms, 3 bathrooms, 220 m² total floor area, block walls, metal roof, a balcony and solar power.”</div><div class="safety-list"><span><i>✓</i> Building type and number of floors</span><span><i>✓</i> Bedrooms, bathrooms and total area</span><span><i>✓</i> Location, materials and special features</span><span><i>!</i> Estimates use starter rates; verify current prices</span><span><i>!</i> Plans and code checks need a professional review</span></div></aside>
@@ -240,6 +241,7 @@ function initCreateForm() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const description = $("#project-description").value.trim();
+    const projectName = $("#project-name").value.trim();
     const location = $("#project-location").value;
     const budgetValue = $("#project-budget").value.trim();
     const output = $("#generated-output");
@@ -248,6 +250,7 @@ function initCreateForm() {
     output.innerHTML = '<div class="loading-block"><span class="spinner"></span><span>Turning your brief into a first-pass project concept…</span></div>';
     try {
       const payload = { description, location: location === "auto" ? null : location };
+      if (projectName) payload.name = projectName;
       if (budgetValue) payload.budget = Number(budgetValue);
       const result = await api("/api/project/generate", { method: "POST", body: payload });
       state.projects = [result, ...state.projects.filter((project) => Number(project.id) !== Number(result.id))];
@@ -281,7 +284,7 @@ function projectDetailMarkup(project, embedded = false) {
   ];
   const materials = cost.materials || [];
   return `
-    ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div><div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${id}">↓ Download 3D</button></div></div>`}
+    ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div><div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${id}">↓ Download 3D</button><button class="button button-quiet" type="button" data-action="delete-project" data-project-id="${id}">Delete</button></div></div>`}
     <section class="detail-summary"><div class="detail-summary-main"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span><p>${escapeHtml(project.description || spec.raw_text || "No description")}</p><div class="detail-metrics"><span class="detail-metric"><strong>${escapeHtml(spec.building_type || project.building_type || "Residential")}</strong></span><span class="detail-metric"><strong>${Number(spec.floors || project.floors || 1)}</strong> floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span><span class="detail-metric"><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong> total area</span><span class="detail-metric"><strong>${Number(spec.bedrooms || 0)}</strong> bed · <strong>${Number(spec.bathrooms || 0)}</strong> bath</span><span class="detail-metric">${escapeHtml(spec.location || project.location || "Ghana")}</span></div></div><div class="detail-cost"><span>Indicative estimate</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong><small>GHS · concept estimate</small></div></section>
     <div class="detail-grid">
       <div class="detail-column">
@@ -290,7 +293,7 @@ function projectDetailMarkup(project, embedded = false) {
         <section class="panel"><div class="panel-heading"><div><h3>First-pass project schedule</h3><p>Sequential planning timeline with an indicative seasonal allowance.</p></div><span class="meta-pill">${Number(spec.floors || project.floors || 1)} floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="schedule-container"><div class="artifact-loading">Preparing schedule…</div></div></section>
       </div>
       <div class="detail-column secondary">
-        <section class="panel"><div class="panel-heading"><div><h3>Cost overview</h3><p>Budget allocation by project category.</p></div></div><div class="cost-hero"><div><span>Indicative total</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong></div><div class="cost-range"><span>Planning range ±15%</span><strong>${money(cost.indicative_range_low_ghs)} – ${money(cost.indicative_range_high_ghs)}</strong></div></div><table class="cost-table"><tbody><tr><td>Materials allocation</td><td>${money(cost.total_materials_ghs)}</td></tr><tr><td>Labour allowance</td><td>${money(cost.labour_cost_ghs)}</td></tr><tr><td>Professional fees allowance</td><td>${money(cost.professional_fees_ghs)}</td></tr><tr><td>Contingency allowance</td><td>${money(cost.contingency_ghs)}</td></tr></tbody></table>${cost.budget_constraint_ghs ? `<div class="disclaimer-box">Budget target: <strong>${money(cost.budget_constraint_ghs)}</strong> · ${cost.within_budget ? "Indicative estimate is within target." : "Indicative estimate exceeds target."}</div>` : ""}<div class="disclaimer-box">${escapeHtml(cost.disclaimer || "Illustrative estimate only; obtain current local prices and a quantity-surveyor estimate.")}</div><table class="cost-table"><tbody>${materials.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${money(item.estimated_amount_ghs)}</td></tr>`).join("")}</tbody></table></section>
+        <section class="panel"><div class="panel-heading"><div><h3>Cost overview</h3><p>Budget allocation by project category.</p></div><button class="panel-link" type="button" data-action="download-cost" data-project-id="${id}">Download CSV →</button></div><div class="cost-hero"><div><span>Indicative total</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong></div><div class="cost-range"><span>Planning range ±15%</span><strong>${money(cost.indicative_range_low_ghs)} – ${money(cost.indicative_range_high_ghs)}</strong></div></div><table class="cost-table"><tbody><tr><td>Materials allocation</td><td>${money(cost.total_materials_ghs)}</td></tr><tr><td>Labour allowance</td><td>${money(cost.labour_cost_ghs)}</td></tr><tr><td>Professional fees allowance</td><td>${money(cost.professional_fees_ghs)}</td></tr><tr><td>Contingency allowance</td><td>${money(cost.contingency_ghs)}</td></tr></tbody></table>${cost.budget_constraint_ghs ? `<div class="disclaimer-box">Budget target: <strong>${money(cost.budget_constraint_ghs)}</strong> · ${cost.within_budget ? "Indicative estimate is within target." : "Indicative estimate exceeds target."}</div>` : ""}<div class="disclaimer-box">${escapeHtml(cost.disclaimer || "Illustrative estimate only; obtain current local prices and a quantity-surveyor estimate.")}</div><table class="cost-table"><tbody>${materials.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${money(item.estimated_amount_ghs)}</td></tr>`).join("")}</tbody></table></section>
         <section class="panel"><div class="panel-heading"><div><h3>Preliminary review</h3><p>Automated screening only — not a code approval.</p></div></div><div class="compliance-status"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div><ul class="compliance-list">${warningItems.map((entry) => `<li class="${entry.pass ? "pass" : ""}">${escapeHtml(entry.item)}</li>`).join("") || `<li>${escapeHtml(compliance.disclaimer || "Have the design reviewed by licensed local professionals and the relevant authority.")}</li>`}</ul><div class="disclaimer-box">${escapeHtml(compliance.disclaimer || "For early planning only. Confirm all code, permit, structural and site requirements locally.")}</div></section>
         <section class="panel"><div class="panel-heading"><div><h3>Assumptions</h3><p>Values extracted from your brief.</p></div></div><table class="cost-table"><tbody><tr><td>Material concept</td><td>${escapeHtml(String(spec.material || "—").replaceAll("_", " "))}</td></tr><tr><td>Roof concept</td><td>${escapeHtml(String(spec.roof_type || "—").replaceAll("_", " "))}</td></tr><tr><td>Foundation concept</td><td>${escapeHtml(String(spec.foundation_type || "—").replaceAll("_", " "))}</td></tr><tr><td>Special features</td><td>${escapeHtml((spec.special_features || []).join(", ") || "None specified")}</td></tr></tbody></table><div class="disclaimer-box">${escapeHtml(cost.rate_note || "The included starter cost rates are not independently verified.")}</div></section>
       </div>
@@ -425,6 +428,37 @@ async function downloadPlan(projectId) {
   }
 }
 
+async function downloadCost(projectId) {
+  try {
+    const blob = await api(`/api/projects/${Number(projectId)}/artifacts/cost.csv`);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `buildwise-estimate-${Number(projectId)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteProject(projectId) {
+  const id = Number(projectId);
+  if (!window.confirm("Delete this project and its saved concept data? This cannot be undone.")) return;
+  try {
+    await api(`/api/projects/${id}`, { method: "DELETE" });
+    state.projects = state.projects.filter((project) => Number(project.id) !== id);
+    state.currentProject = null;
+    updateNavCount();
+    setView("projects");
+    showToast("Project deleted.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
 $("#auth-switch").addEventListener("click", () => showAuth(state.authMode === "login" ? "register" : "login"));
 $("#auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -483,6 +517,8 @@ document.addEventListener("click", async (event) => {
   if (action === "project-open") await openProject(actionButton.dataset.projectId);
   else if (action === "back-projects") setView("projects");
   else if (action === "download-model") await downloadModel(actionButton.dataset.projectId);
+  else if (action === "download-cost") await downloadCost(actionButton.dataset.projectId);
+  else if (action === "delete-project") await deleteProject(actionButton.dataset.projectId);
   else if (action === "download-plan") {
     event.preventDefault();
     await downloadPlan(actionButton.dataset.projectId);

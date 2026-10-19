@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -15,7 +17,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
@@ -100,6 +102,7 @@ class LoginRequest(BaseModel):
 
 class ProjectRequest(BaseModel):
     description: str = Field(min_length=10, max_length=4000)
+    name: str | None = Field(default=None, max_length=120)
     location: str | None = Field(default=None, max_length=100)
     budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
 
@@ -272,9 +275,10 @@ def generate_project(
 
     compliance_result = compliance.check(spec)
     cost_result = _estimate_cost(spec)
+    project_name = req.name.strip() if req.name and req.name.strip() else f"{str(spec['building_type']).title()} concept · {spec['location']}"
     project = Project(
         user_id=current_user.id,
-        name=f"{str(spec['building_type']).title()} concept · {spec['location']}",
+        name=project_name[:200],
         description=req.description.strip(),
         location=spec["location"],
         building_type=spec["building_type"],
@@ -372,6 +376,48 @@ def get_project_schedule(project_id: int, current_user: User = Depends(get_curre
     spec = _load_project_spec(project)
     path = schedule_4d.generate_schedule(spec, project.id)
     return FileResponse(path, media_type="application/json", filename=f"concept-schedule-{project.id}.json")
+
+
+@app.get("/api/projects/{project_id}/artifacts/cost.csv")
+def get_project_cost_csv(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    project = _get_owned_project(project_id, current_user, db)
+    try:
+        cost = json.loads(project.cost_json or "{}")
+    except json.JSONDecodeError:
+        cost = {}
+    buffer = io.StringIO(newline="")
+    writer = csv.writer(buffer)
+    writer.writerow(["Buildwise GH — indicative project estimate"])
+    writer.writerow(["Project", project.name])
+    writer.writerow(["Location", project.location])
+    writer.writerow(["Area (m²)", project.area_sqm])
+    writer.writerow(["Currency", "GHS"])
+    writer.writerow([])
+    writer.writerow(["Line item", "Estimated amount (GHS)", "Basis"])
+    writer.writerow(["Materials allocation", cost.get("total_materials_ghs", 0), "Indicative percentage allocation"])
+    writer.writerow(["Labour allowance", cost.get("labour_cost_ghs", 0), "Indicative percentage allocation"])
+    writer.writerow(["Professional fees allowance", cost.get("professional_fees_ghs", 0), "Indicative percentage allocation"])
+    writer.writerow(["Contingency allowance", cost.get("contingency_ghs", 0), "Indicative percentage allocation"])
+    for material in cost.get("materials", []):
+        writer.writerow([material.get("name", "Materials"), material.get("estimated_amount_ghs", 0), "Materials budget allocation; not a measured quantity"])
+    writer.writerow(["Indicative total", cost.get("total_ghs", project.estimated_cost_ghs), "Starter rate; not a quote"])
+    writer.writerow(["Planning range — low", cost.get("indicative_range_low_ghs", 0), "Approx. -15%"])
+    writer.writerow(["Planning range — high", cost.get("indicative_range_high_ghs", 0), "Approx. +15%"])
+    writer.writerow([])
+    writer.writerow(["Disclaimer", cost.get("disclaimer", "Illustrative estimate only; confirm current local prices and scope.")])
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="buildwise-estimate-{project.id}.csv"'},
+    )
+
+
+@app.delete("/api/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    project = _get_owned_project(project_id, current_user, db)
+    db.delete(project)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/health")
