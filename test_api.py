@@ -57,6 +57,32 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(self.client.get(f"/api/projects/{project['id']}", headers=self.headers).status_code, 404)
 
+    def test_professional_handoff_artifacts_are_private_and_escaped(self):
+        response = self.client.post("/api/project/generate", headers=self.headers, json={
+            "description": "A 3-bedroom, 2-bathroom bungalow in Kumasi with 145 sqm total floor area.",
+            "location": "Kumasi",
+            "handoff": {
+                "site_width_m": 30,
+                "site_depth_m": 40,
+                "building_footprint_sqm": 120,
+                "road_orientation": "North",
+                "local_authority": "Kumasi Metropolitan Assembly",
+                "planning_priorities": "Daylight and drainage <review before issue>",
+            },
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        project_id = response.json()["id"]
+        handoff_json = self.client.get(f"/api/projects/{project_id}/artifacts/handoff.json", headers=self.headers)
+        self.assertEqual(handoff_json.status_code, 200, handoff_json.text)
+        self.assertEqual(handoff_json.json()["site_and_programme"]["site_width_m"], 30)
+        self.assertIn("not a site survey", handoff_json.json()["disclaimer"].lower())
+        handoff_html = self.client.get(f"/api/projects/{project_id}/artifacts/handoff.html", headers=self.headers)
+        self.assertEqual(handoff_html.status_code, 200, handoff_html.text)
+        self.assertIn("PROFESSIONAL HANDOFF PACK", handoff_html.text)
+        self.assertIn("&lt;review before issue&gt;", handoff_html.text)
+        self.assertNotIn("<review before issue>", handoff_html.text)
+        self.assertEqual(self.client.get(f"/api/projects/{project_id}/artifacts/handoff.json").status_code, 401)
+
     def test_users_cannot_read_each_others_projects(self):
         response = self.client.post("/api/project/generate", headers=self.headers, json={
             "description": "A small 2-bedroom house in Kumasi with 100 sqm total floor area.",

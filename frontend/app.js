@@ -228,6 +228,7 @@ function createMarkup() {
             <label class="form-field"><span>Budget ceiling <small>Optional · GHS</small></span><input id="project-budget" type="number" min="1" step="1000" placeholder="e.g. 500000"><small class="form-hint">Used only to compare the estimate with your target.</small></label>
           </div>
           <label class="form-field"><span>Bathroom planning preference</span><select id="bathroom-template-choice"><option value="keep" selected>Keep the bathroom count in my brief</option><option value="apply">Apply the Ghana-focused planning template suggestion</option></select><small class="form-hint">The template is optional. It can suggest additional sanitary spaces for the concept, but it is not a building-code or permit determination.</small></label>
+          <details class="disclaimer-box"><summary><strong>Professional handoff details</strong> <span>Optional · for your appointed architect/engineer</span></summary><p>These details create a printable handoff brief and JSON export. They do not create a permit drawing or approval.</p><div class="input-grid"><label class="form-field"><span>Site width · m</span><input id="handoff-site-width" type="number" min="0.1" max="100000" step="0.1" placeholder="e.g. 30"></label><label class="form-field"><span>Site depth · m</span><input id="handoff-site-depth" type="number" min="0.1" max="100000" step="0.1" placeholder="e.g. 40"></label><label class="form-field"><span>Target footprint · m²</span><input id="handoff-footprint" type="number" min="0.1" max="1000000" step="0.1" placeholder="e.g. 120"></label><label class="form-field"><span>Road orientation</span><select id="handoff-road-orientation"><option value="">Not supplied</option><option>North</option><option>East</option><option>South</option><option>West</option></select></label></div><label class="form-field"><span>Local authority / assembly</span><input id="handoff-authority" type="text" maxlength="160" placeholder="e.g. Kumasi Metropolitan Assembly"></label><label class="form-field"><span>Priorities for your professional team</span><textarea id="handoff-priorities" maxlength="1500" placeholder="Access, daylight, drainage, accessibility, future expansion, materials, etc."></textarea></label></details>
           <div class="form-actions"><span>Rule-based first pass; review every extracted assumption.</span><button id="generate-button" class="button button-primary" type="submit">Generate concept <span>→</span></button></div>
         </form>
       </section>
@@ -255,6 +256,19 @@ function initCreateForm() {
         location: location === "auto" ? null : location,
         apply_bathroom_template: $("#bathroom-template-choice").value === "apply",
       };
+      const optionalNumber = (selector) => {
+        const value = $(selector).value.trim();
+        return value ? Number(value) : null;
+      };
+      const handoff = {
+        site_width_m: optionalNumber("#handoff-site-width"),
+        site_depth_m: optionalNumber("#handoff-site-depth"),
+        building_footprint_sqm: optionalNumber("#handoff-footprint"),
+        road_orientation: $("#handoff-road-orientation").value,
+        local_authority: $("#handoff-authority").value.trim(),
+        planning_priorities: $("#handoff-priorities").value.trim(),
+      };
+      if (Object.values(handoff).some((value) => value !== null && value !== "")) payload.handoff = handoff;
       if (projectName) payload.name = projectName;
       if (budgetValue) payload.budget = Number(budgetValue);
       const result = await api("/api/project/generate", { method: "POST", body: payload });
@@ -289,7 +303,7 @@ function projectDetailMarkup(project, embedded = false) {
   ];
   const materials = cost.materials || [];
   return `
-    ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div><div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${id}">↓ Download 3D</button><button class="button button-quiet" type="button" data-action="delete-project" data-project-id="${id}">Delete</button></div></div>`}
+    ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div><div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${id}">↓ Download 3D</button><button class="button button-secondary" type="button" data-action="print-handoff" data-project-id="${id}">Print handoff</button><button class="button button-quiet" type="button" data-action="download-handoff" data-project-id="${id}">Handoff JSON</button><button class="button button-quiet" type="button" data-action="delete-project" data-project-id="${id}">Delete</button></div></div>`}
     <section class="detail-summary"><div class="detail-summary-main"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span><p>${escapeHtml(project.description || spec.raw_text || "No description")}</p><div class="detail-metrics"><span class="detail-metric"><strong>${escapeHtml(spec.building_type || project.building_type || "Residential")}</strong></span><span class="detail-metric"><strong>${Number(spec.floors || project.floors || 1)}</strong> floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span><span class="detail-metric"><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong> total area</span><span class="detail-metric"><strong>${Number(spec.bedrooms || 0)}</strong> bed · <strong>${Number(spec.bathrooms || 0)}</strong> bath</span><span class="detail-metric">${escapeHtml(spec.location || project.location || "Ghana")}</span></div></div><div class="detail-cost"><span>Indicative estimate</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong><small>GHS · concept estimate</small></div></section>
     <div class="detail-grid">
       <div class="detail-column">
@@ -433,6 +447,43 @@ async function downloadPlan(projectId) {
   }
 }
 
+async function downloadHandoff(projectId) {
+  try {
+    const blob = await api(`/api/projects/${Number(projectId)}/artifacts/handoff.json`);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `buildwise-professional-handoff-${Number(projectId)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function printHandoff(projectId) {
+  const printWindow = window.open("", "_blank", "noopener");
+  try {
+    const blob = await api(`/api/projects/${Number(projectId)}/artifacts/handoff.html`);
+    const url = URL.createObjectURL(blob);
+    if (!printWindow) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.click();
+    } else {
+      printWindow.location.href = url;
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    printWindow?.close();
+    showToast(error.message, "error");
+  }
+}
+
 async function downloadCost(projectId) {
   try {
     const blob = await api(`/api/projects/${Number(projectId)}/artifacts/cost.csv`);
@@ -523,6 +574,8 @@ document.addEventListener("click", async (event) => {
   else if (action === "back-projects") setView("projects");
   else if (action === "download-model") await downloadModel(actionButton.dataset.projectId);
   else if (action === "download-cost") await downloadCost(actionButton.dataset.projectId);
+  else if (action === "print-handoff") await printHandoff(actionButton.dataset.projectId);
+  else if (action === "download-handoff") await downloadHandoff(actionButton.dataset.projectId);
   else if (action === "delete-project") await deleteProject(actionButton.dataset.projectId);
   else if (action === "download-plan") {
     event.preventDefault();

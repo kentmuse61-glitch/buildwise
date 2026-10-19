@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 import os
@@ -100,12 +101,24 @@ class LoginRequest(BaseModel):
         return value.strip().lower()
 
 
+class ProfessionalHandoffRequest(BaseModel):
+    """Optional site and programme data for a licensed professional's brief."""
+
+    site_width_m: float | None = Field(default=None, gt=0, le=100_000)
+    site_depth_m: float | None = Field(default=None, gt=0, le=100_000)
+    building_footprint_sqm: float | None = Field(default=None, gt=0, le=1_000_000)
+    road_orientation: str = Field(default="", max_length=40)
+    local_authority: str = Field(default="", max_length=160)
+    planning_priorities: str = Field(default="", max_length=1500)
+
+
 class ProjectRequest(BaseModel):
     description: str = Field(min_length=10, max_length=4000)
     name: str | None = Field(default=None, max_length=120)
     location: str | None = Field(default=None, max_length=100)
     budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
     apply_bathroom_template: bool = False
+    handoff: ProfessionalHandoffRequest | None = None
 
 
 class ContractorQuery(BaseModel):
@@ -206,6 +219,71 @@ def _project_summary(project: Project) -> dict[str, Any]:
     }
 
 
+def _professional_handoff_payload(project: Project) -> dict[str, Any]:
+    """Return a transparent brief for external professional review, not approval."""
+    spec = _load_project_spec(project)
+    raw_handoff = spec.get("professional_handoff")
+    handoff = raw_handoff if isinstance(raw_handoff, dict) else {}
+    guidance = spec.get("planning_guidance")
+    return {
+        "title": "Buildwise GH — Professional Handoff Pack",
+        "project": {
+            "id": project.id,
+            "name": project.name,
+            "description": project.description,
+            "location": project.location,
+            "building_type": project.building_type,
+            "floors": project.floors,
+            "bedrooms": spec.get("bedrooms"),
+            "bathrooms": spec.get("bathrooms"),
+            "total_floor_area_sqm": project.area_sqm,
+            "budget_target_ghs": spec.get("budget_constraint"),
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+        },
+        "site_and_programme": {
+            "site_width_m": handoff.get("site_width_m"),
+            "site_depth_m": handoff.get("site_depth_m"),
+            "building_footprint_sqm": handoff.get("building_footprint_sqm"),
+            "road_orientation": handoff.get("road_orientation") or "Not supplied",
+            "local_authority": handoff.get("local_authority") or "Not supplied",
+            "planning_priorities": handoff.get("planning_priorities") or "Not supplied",
+        },
+        "planning_context": guidance if isinstance(guidance, dict) else {},
+        "professional_checklist": [
+            "Verify title, boundaries, survey coordinates, road reserve and site dimensions.",
+            "Confirm zoning, setbacks, planning constraints and MMDA requirements for the actual parcel.",
+            "Complete architectural, structural, drainage, electrical and plumbing design as applicable.",
+            "Obtain site investigation and any required geotechnical, environmental or utility information.",
+            "Prepare, sign and submit permit drawings through appropriately licensed professionals and the relevant authority.",
+        ],
+        "disclaimer": "This is an early-planning handoff brief only. It is not a site survey, code determination, architectural or engineering drawing, bill of quantities, permit package, or approval to construct.",
+    }
+
+
+def _professional_handoff_html(payload: dict[str, Any]) -> str:
+    """Render a self-contained, printable HTML handoff sheet."""
+    project = payload["project"]
+    site = payload["site_and_programme"]
+
+    def safe(value: Any) -> str:
+        return html.escape("Not supplied" if value in {None, ""} else str(value))
+
+    rows = [
+        ("Project", project["name"]), ("Location", project["location"]), ("Building type", project["building_type"]),
+        ("Floors", project["floors"]), ("Bedrooms", project["bedrooms"]), ("Bathrooms", project["bathrooms"]),
+        ("Total floor area", f"{project['total_floor_area_sqm']} m²"), ("Budget target", f"GHS {project['budget_target_ghs']}" if project["budget_target_ghs"] else None),
+        ("Site width", f"{site['site_width_m']} m" if site["site_width_m"] else None),
+        ("Site depth", f"{site['site_depth_m']} m" if site["site_depth_m"] else None),
+        ("Target footprint", f"{site['building_footprint_sqm']} m²" if site["building_footprint_sqm"] else None),
+        ("Road orientation", site["road_orientation"]), ("Local authority / assembly", site["local_authority"]),
+    ]
+    rows_html = "".join(f"<tr><th>{safe(label)}</th><td>{safe(value)}</td></tr>" for label, value in rows)
+    checklist_html = "".join(f"<li>{safe(item)}</li>" for item in payload["professional_checklist"])
+    return f"""<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Professional Handoff — {safe(project['name'])}</title><style>
+body{{font:14px/1.5 Arial,sans-serif;color:#1e2f29;margin:32px;max-width:900px}}h1{{font-size:25px;margin:0 0 4px}}h2{{font-size:17px;margin:28px 0 8px}}.eyebrow{{color:#587267;font-size:11px;font-weight:700;letter-spacing:.09em}}.warning{{background:#fff3d4;border-left:4px solid #b77a00;padding:12px 14px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #cfd9d4;padding:8px;text-align:left;vertical-align:top}}th{{width:32%;background:#f1f5f2}}.box{{background:#f7faf8;border:1px solid #d8e2dd;padding:12px}}@media print{{body{{margin:15mm}}}}
+</style></head><body><div class=\"eyebrow\">BUILDWISE GH · PROFESSIONAL HANDOFF PACK</div><h1>{safe(project['name'])}</h1><p>{safe(payload['disclaimer'])}</p><div class=\"warning\"><strong>Do not build from this document.</strong> Appoint suitably licensed Ghanaian professionals to verify all site, legal, planning, structural and services requirements.</div><h2>Project and site brief</h2><table>{rows_html}</table><h2>Original brief</h2><div class=\"box\">{safe(project['description'])}</div><h2>Planning priorities</h2><div class=\"box\">{safe(site['planning_priorities'])}</div><h2>Professional completion checklist</h2><ul>{checklist_html}</ul></body></html>"""
+
+
 def _get_owned_project(project_id: int, current_user: User, db) -> Project:
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if project is None:
@@ -276,6 +354,10 @@ def generate_project(
     # This is a user-selected concept template. It is kept separate from the
     # preliminary compliance screen and never represents a permit conclusion.
     spec = plan_gen.prepare_residential_guidance(spec, req.apply_bathroom_template)
+    if req.handoff is not None:
+        handoff = req.handoff.model_dump()
+        if any(value not in (None, "") for value in handoff.values()):
+            spec["professional_handoff"] = handoff
 
     compliance_result = compliance.check(spec)
     cost_result = _estimate_cost(spec)
@@ -380,6 +462,27 @@ def get_project_schedule(project_id: int, current_user: User = Depends(get_curre
     spec = _load_project_spec(project)
     path = schedule_4d.generate_schedule(spec, project.id)
     return FileResponse(path, media_type="application/json", filename=f"concept-schedule-{project.id}.json")
+
+
+@app.get("/api/projects/{project_id}/artifacts/handoff.json")
+def get_professional_handoff_json(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    project = _get_owned_project(project_id, current_user, db)
+    payload = _professional_handoff_payload(project)
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="buildwise-handoff-{project.id}.json"'},
+    )
+
+
+@app.get("/api/projects/{project_id}/artifacts/handoff.html")
+def get_professional_handoff_html(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    project = _get_owned_project(project_id, current_user, db)
+    return Response(
+        content=_professional_handoff_html(_professional_handoff_payload(project)),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="buildwise-handoff-{project.id}.html"'},
+    )
 
 
 @app.get("/api/projects/{project_id}/artifacts/cost.csv")
