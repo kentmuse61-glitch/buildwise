@@ -8,7 +8,8 @@ from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 
 from .database import User, get_db
@@ -57,7 +58,7 @@ def get_current_user(
         username = payload.get("sub")
         if not isinstance(username, str) or not username:
             raise invalid
-    except JWTError:
+    except InvalidTokenError:
         raise invalid
 
     user = db.query(User).filter(User.username == username, User.is_active.is_(True)).first()
