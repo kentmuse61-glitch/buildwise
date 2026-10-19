@@ -98,7 +98,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
 
-The integration tests cover registration/login, named project creation, per-user ownership, CSV export and deletion. GitHub Actions also generates a representative GLB and validates it against the glTF 2.0 specification before accepting changes.
+The integration tests cover registration/login, named project creation, per-user ownership, CSV export and deletion.
 
 ## Before production
 
