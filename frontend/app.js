@@ -185,6 +185,7 @@ function createMarkup() {
             <label class="form-field"><span>Budget ceiling <small>Optional · GHS</small></span><input id="project-budget" type="number" min="1" step="1000" placeholder="e.g. 500000"><small class="form-hint">Used only to compare the estimate with your target.</small></label>
           </div>
           <label class="form-field"><span>Bathroom planning preference</span><select id="bathroom-template-choice"><option value="keep" selected>Keep the bathroom count in my brief</option><option value="apply">Apply the Ghana-focused planning template suggestion</option></select><small class="form-hint">The template is optional. It can suggest additional sanitary spaces for the concept, but it is not a building-code or permit determination.</small></label>
+          <label class="form-field"><span>Concept direction</span><select id="market-focus"><option value="balanced" selected>Balanced · Ghana context + contemporary living</option><option value="ghana_context">Ghana-context · site, climate and supply prompts</option><option value="global_modern">Global-modern · flexibility and long-term comfort prompts</option></select><small class="form-hint">Creates transparent briefing prompts, not market scoring, code compliance, investment advice or a different approved design.</small></label>
           <details class="disclaimer-box"><summary><strong>Professional handoff details</strong> <span>Optional · for your appointed architect/engineer</span></summary><p>These details create a printable handoff brief and JSON export. They do not create a permit drawing or approval.</p><div class="input-grid"><label class="form-field"><span>Site width · m</span><input id="handoff-site-width" type="number" min="0.1" max="100000" step="0.1" placeholder="e.g. 30"></label><label class="form-field"><span>Site depth · m</span><input id="handoff-site-depth" type="number" min="0.1" max="100000" step="0.1" placeholder="e.g. 40"></label><label class="form-field"><span>Target footprint · m²</span><input id="handoff-footprint" type="number" min="0.1" max="1000000" step="0.1" placeholder="e.g. 120"></label><label class="form-field"><span>Road orientation</span><select id="handoff-road-orientation"><option value="">Not supplied</option><option>North</option><option>East</option><option>South</option><option>West</option></select></label></div><label class="form-field"><span>Local authority / assembly</span><input id="handoff-authority" type="text" maxlength="160" placeholder="e.g. Kumasi Metropolitan Assembly"></label><label class="form-field"><span>Priorities for your professional team</span><textarea id="handoff-priorities" maxlength="1500" placeholder="Access, daylight, drainage, accessibility, future expansion, materials, etc."></textarea></label></details>
           <div class="form-actions"><span>Rule-based first pass; review every extracted assumption.</span><button id="generate-button" class="button button-primary" type="submit">Generate concept <span>→</span></button></div>
         </form>
@@ -212,6 +213,7 @@ function initCreateForm() {
         description,
         location: location === "auto" ? null : location,
         apply_bathroom_template: $("#bathroom-template-choice").value === "apply",
+        market_focus: $("#market-focus").value,
       };
       const optionalNumber = (selector) => {
         const value = $(selector).value.trim();
@@ -269,7 +271,7 @@ function projectDetailMarkup(project, embedded = false) {
         <div id="studio-console" class="studio-viewport" data-studio-mode="split">
           <section class="studio-canvas-pane" data-studio-pane="plan"><div class="studio-canvas-header"><span>01 · Plan study</span><span class="studio-canvas-chip">Approximate dimensions</span></div><div class="plan-stage"><img id="plan-image" alt="Dimensioned schematic concept floor plan" src="" /><span class="artifact-loading" id="plan-loading">Preparing plan…</span></div></section>
           <section class="studio-canvas-pane" data-studio-pane="model"><div class="studio-canvas-header"><span>02 · Massing model</span><span class="studio-canvas-chip">Orbit to inspect</span></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div></section>
-          <aside class="studio-inspector" aria-label="Spatial-program inspector"><div class="studio-inspector-heading"><span>SPATIAL PROGRAM</span><span class="studio-live-dot">CONCEPT</span></div><div class="studio-program-stats"><span><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")}</strong> m² total</span><span><strong>${Number(spec.floors || project.floors || 1)}</strong> level${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="studio-spatial-program" class="studio-program-list"><div class="artifact-loading">Loading room program…</div></div><div class="studio-review-note"><strong>Review state</strong><span>${escapeHtml(compliance.status || project.compliance_status || "Professional review required")}</span><p>Not a code screen, structural check, permit drawing, IFC model or construction issue.</p></div></aside>
+          <aside class="studio-inspector" aria-label="Spatial-program inspector"><div class="studio-inspector-heading"><span>SPATIAL PROGRAM</span><span class="studio-live-dot">CONCEPT</span></div><div class="studio-program-stats"><span><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")}</strong> m² total</span><span><strong>${Number(spec.floors || project.floors || 1)}</strong> level${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="studio-spatial-program" class="studio-program-list"><div class="artifact-loading">Loading room program…</div></div><div id="studio-market-direction" class="studio-market-direction"><div class="artifact-loading">Loading concept direction…</div></div><div class="studio-review-note"><strong>Review state</strong><span>${escapeHtml(compliance.status || project.compliance_status || "Professional review required")}</span><p>Not a code screen, structural check, permit drawing, IFC model or construction issue.</p></div></aside>
         </div>
         <div class="studio-quantity-lens" aria-label="Concept quantity lens"><div class="studio-quantity-heading"><span>CONCEPT QTO LENS</span><small>Transparent allowances · not a procurement or construction quantity</small></div><div class="studio-quantity-metrics"><div><span>Indicative cost</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong></div><div><span>Gross floor area</span><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong></div><div id="studio-qto-summary"><span>Quantity allowances load with the concept workspace.</span></div><div class="studio-carbon-note">Carbon/LCA requires verified material quantities and EPD inputs.</div></div></div>
     </section>
@@ -360,6 +362,7 @@ async function initProjectArtifacts(project) {
       scheduleContainer.innerHTML = `<div class="form-error">${escapeHtml(error.message)}</div>`;
     }
   }
+  renderStudioMarketDirections(project.market_directions);
   await initWorkbench(project);
 }
 
@@ -447,6 +450,19 @@ function renderStudioIntelligence(data) {
       qtoSummary.innerHTML = `<span>${items.length} planning allowances</span><div class="studio-qto-items">${items.slice(0, 3).map((item) => `<span>${escapeHtml(item.item || "Allowance")}: <strong>${Number(item.quantity || 0).toLocaleString("en-GH")} ${escapeHtml(item.unit || "")}</strong></span>`).join("")}</div>`;
     }
   }
+}
+
+function renderStudioMarketDirections(payload) {
+  const host = $("#studio-market-direction");
+  if (!host) return;
+  const directions = Array.isArray(payload?.directions) ? payload.directions : [];
+  const selected = directions.find((direction) => direction?.selected) || directions.find((direction) => direction?.key === payload?.selected_focus);
+  if (!selected) {
+    host.innerHTML = '<p class="studio-empty">Concept direction prompts are unavailable for this legacy project.</p>';
+    return;
+  }
+  const prompts = Array.isArray(selected.priority_prompts) ? selected.priority_prompts.slice(0, 2) : [];
+  host.innerHTML = `<div class="studio-market-heading"><span>CONCEPT DIRECTION</span><b>${escapeHtml(selected.label || "Balanced briefing")}</b></div><p>${escapeHtml(selected.tagline || "Review-first client briefing prompts.")}</p><ul>${prompts.map((prompt) => `<li>${escapeHtml(prompt)}</li>`).join("")}</ul><small>${escapeHtml(selected.not_claimed || "Professional review is required.")}</small>`;
 }
 
 async function initWorkbench(project) {

@@ -161,6 +161,8 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(concept["status"], "temporary-public-concept")
         self.assertIn("expire", concept["public_note"])
         self.assertIn("quantity_takeoff", concept["workbench"])
+        self.assertEqual(concept["market_directions"]["selected_focus"], "balanced")
+        self.assertEqual(len(concept["market_directions"]["directions"]), 3)
 
         plan = self.client.get(concept["plan_url"])
         self.assertEqual(plan.status_code, 200, plan.text)
@@ -173,6 +175,21 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(schedule.status_code, 200, schedule.text)
         self.assertIn("phases", schedule.json())
         self.assertEqual(self.client.get("/api/public/artifacts/not-a-token/model.glb").status_code, 404)
+
+    def test_market_direction_endpoint_is_bounded_and_non_persistent(self):
+        response = self.client.post("/api/v2/generate/market-variants", json={
+            "description": "A two-storey, 3-bedroom family home in Kumasi with solar power and a balcony.",
+            "location": "Kumasi",
+            "target_market": "international",
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["status"], "concept-directions-ready")
+        self.assertEqual(payload["market_directions"]["selected_focus"], "global_modern")
+        self.assertEqual(len(payload["market_directions"]["directions"]), 3)
+        selected = next(card for card in payload["market_directions"]["directions"] if card["selected"])
+        self.assertIn("not an international compliance", selected["not_claimed"].lower())
+        self.assertIn("no plan", payload["note"].lower())
 
     def test_security_headers_are_present(self):
         response = self.client.get("/api/health")

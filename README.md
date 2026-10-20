@@ -18,6 +18,7 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 - Responsive same-origin web UI and Render Blueprint configuration.
 - Original Design-to-Delivery Workbench: editable room blocks, visible QTO/block allowances, energy-planning prompts and project-owned delivery progress updates.
 - Authenticated fixed-ID diagnostic generation for plan, GLB and schedule artifacts.
+- Buildwise-owned concept directions — Ghana-context, global-modern and balanced briefing lenses that make client/site discussion prompts visible without scoring markets, predicting outcomes or implying approval.
 
 ## Run locally
 
@@ -55,7 +56,7 @@ The included `render.yaml` is a Render Blueprint:
 2. In Render, choose **New → Blueprint**, connect the repository and select `render.yaml`.
 3. Review the resources and current prices before confirming. The template uses a **free web service** and the smallest currently named paid PostgreSQL compute plan so the database does not expire after 30 days. The web service can spin down when idle; select a paid web plan for always-on production use.
 4. Render generates `SECRET_KEY` and wires `DATABASE_URL` to the managed PostgreSQL service. Do not paste secrets into GitHub or commit `.env`.
-5. Once the deploy is live, check `/api/health`, open the service URL and create an account.
+5. Once the deploy is live, check `/api/health`, open the service URL and generate a temporary Guest Concept Mode briefing. The public workspace does not require an account.
 
 Render plan names and prices can change. Review them in Render before applying the Blueprint. If you intentionally switch the database to Render's free PostgreSQL plan for a short preview, note that free Render Postgres expires after 30 days; upgrade or back up/export before then. The app regenerates files on demand, so it does not require a persistent web-service disk.
 
@@ -72,7 +73,8 @@ Copy `.env.example` to `.env` and set:
 - `POST /api/auth/register` — create an account.
 - `POST /api/auth/login` — obtain a bearer token.
 - `GET /api/auth/me` — current account (`Authorization: Bearer ...`).
-- `POST /api/public/project/generate` — generate a no-login, non-persistent concept with time-limited public artifact URLs.
+- `POST /api/public/project/generate` — generate a no-login, non-persistent concept with time-limited public artifact URLs. Accepts `market_focus` of `ghana_context`, `global_modern` or `balanced` (or the compatibility field `target_market` using Ghana, international or both) and returns transparent briefing directions alongside the concept.
+- `POST /api/v2/generate/market-variants` — return the same clean-room briefing-direction comparison without creating a plan, artifact or project record. It never returns a market score, forecast, code conclusion or approval.
 - `GET /api/public/artifacts/{token}/{plan.svg|model.glb|schedule.json}` — retrieve one temporary public artifact while its unguessable link is valid.
 - `POST /api/project/generate` — generate and save a project concept (authenticated legacy/private API).
 - `GET /api/projects` and `GET /api/projects/{id}` — list/open your projects (authenticated legacy/private API).
@@ -111,7 +113,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest -v test_core.py test_api.py
 ```
 
-The suite covers the public, time-limited concept flow; modern SVG and GLB artifact structure; and the retained private API ownership/export safeguards.
+The suite covers the public, time-limited concept flow; clean-room market-direction bounds; modern SVG and GLB artifact structure; and the retained private API ownership/export safeguards.
 
 ## Before production
 

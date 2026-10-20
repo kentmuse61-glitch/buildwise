@@ -9,6 +9,7 @@ from xml.etree import ElementTree
 from backend.compliance import ComplianceChecker
 from backend.contractors import ContractorMatcher
 from backend.model_3d import Model3DGenerator
+from backend.market_directions import MarketDirectionBuilder
 from backend.nlp_engine import parse_construction_request
 from backend.plan_generator import PlanGenerator
 from backend.schedule_4d import Schedule4D
@@ -151,6 +152,21 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertGreater(len(schedule["phases"]), 5)
         self.assertEqual(schedule["phases"][0]["start"], schedule["start_date"])
         self.assertGreater(schedule["total_duration_days"], 100)
+
+    def test_market_directions_are_review_first_and_feature_aware(self):
+        directions = MarketDirectionBuilder().build({
+            "location": "Kumasi", "floors": 2, "area_sqm": 180,
+            "special_features": ["solar_power", "balcony"],
+        }, "ghana_context")
+        self.assertEqual(directions["selected_focus"], "ghana_context")
+        self.assertEqual(len(directions["directions"]), 3)
+        selected = next(card for card in directions["directions"] if card["selected"])
+        self.assertEqual(selected["key"], "ghana_context")
+        prompt_text = " ".join(selected["priority_prompts"]).lower()
+        self.assertIn("solar", prompt_text)
+        self.assertIn("balcony", prompt_text)
+        self.assertIn("not a ghana building code", selected["not_claimed"].lower())
+        self.assertIn("not ratings", directions["method"].lower())
 
     def test_compliance_is_explicitly_preliminary(self):
         checker = ComplianceChecker()

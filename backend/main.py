@@ -22,7 +22,7 @@ load_dotenv(BASE_DIR / ".env")
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import FileResponse
@@ -38,6 +38,7 @@ from .compliance import ComplianceChecker
 from .contractors import ContractorMatcher
 from .database import Base, Project, User, engine, get_db
 from .model_3d import Model3DGenerator
+from .market_directions import MarketDirectionBuilder
 from .nlp_engine import parse_construction_request
 from .plan_generator import PlanGenerator
 from .schedule_4d import Schedule4D
@@ -66,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.2.3",
+    version="1.2.4",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
@@ -86,6 +87,7 @@ plan_gen = PlanGenerator(str(OUTPUT_DIR))
 model_3d = Model3DGenerator(str(OUTPUT_DIR))
 schedule_4d = Schedule4D(str(OUTPUT_DIR), str(DATA_DIR))
 workbench = ProjectWorkbench(plan_gen, schedule_4d)
+market_directions = MarketDirectionBuilder()
 review_tools = ReviewTools()
 compliance = ComplianceChecker(str(DATA_DIR))
 contractors = ContractorMatcher(str(DATA_DIR))
@@ -146,7 +148,36 @@ class ProjectRequest(BaseModel):
     location: str | None = Field(default=None, max_length=100)
     budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
     apply_bathroom_template: bool = False
+    market_focus: str = Field(default="balanced", min_length=1, max_length=40, validation_alias=AliasChoices("market_focus", "target_market"))
     handoff: ProfessionalHandoffRequest | None = None
+
+    @field_validator("market_focus")
+    @classmethod
+    def normalize_market_focus(cls, value: str) -> str:
+        aliases = {
+            "ghana_context": "ghana_context", "ghana": "ghana_context", "local": "ghana_context",
+            "global_modern": "global_modern", "international": "global_modern", "global": "global_modern",
+            "balanced": "balanced", "both": "balanced",
+        }
+        normalized = aliases.get(value.strip().lower().replace("-", "_").replace(" ", "_"))
+        if normalized is None:
+            raise ValueError("Choose Ghana-context, global-modern or balanced market focus")
+        return normalized
+
+
+class MarketVariantRequest(BaseModel):
+    """Bounded public input for review-first client-briefing directions."""
+
+    description: str = Field(min_length=10, max_length=4000)
+    location: str | None = Field(default=None, max_length=100)
+    budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
+    apply_bathroom_template: bool = False
+    market_focus: str = Field(default="balanced", min_length=1, max_length=40, validation_alias=AliasChoices("market_focus", "target_market"))
+
+    @field_validator("market_focus")
+    @classmethod
+    def normalize_market_focus(cls, value: str) -> str:
+        return ProjectRequest.normalize_market_focus(value)
 
 
 class ContractorQuery(BaseModel):
@@ -331,6 +362,25 @@ def _estimate_cost(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _prepare_concept_spec(
+    description: str,
+    location: str | None,
+    budget: float | None,
+    apply_bathroom_template: bool,
+    market_focus: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Parse one bounded brief and attach review-first market directions."""
+    spec = parse_construction_request(description)
+    if location and location.strip().lower() not in {"auto", "automatic"}:
+        spec["location"] = location.strip()
+    if budget is not None:
+        spec["budget_constraint"] = budget
+    spec = plan_gen.prepare_residential_guidance(spec, apply_bathroom_template)
+    directions = market_directions.build(spec, market_focus)
+    spec["market_focus"] = directions["selected_focus"]
+    return spec, directions
+
+
 def _load_project_spec(project: Project) -> dict[str, Any]:
     try:
         value = json.loads(project.spec_json or "{}")
@@ -486,14 +536,11 @@ def generate_project(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    spec = parse_construction_request(req.description)
-    if req.location and req.location.strip().lower() not in {"auto", "automatic"}:
-        spec["location"] = req.location.strip()
-    if req.budget is not None:
-        spec["budget_constraint"] = req.budget
-    # This is a user-selected concept template. It is kept separate from the
-    # preliminary compliance screen and never represents a permit conclusion.
-    spec = plan_gen.prepare_residential_guidance(spec, req.apply_bathroom_template)
+    # The selected focus produces briefing prompts only; it never alters legal,
+    # structural, permit or compliance status.
+    spec, market_direction_result = _prepare_concept_spec(
+        req.description, req.location, req.budget, req.apply_bathroom_template, req.market_focus
+    )
     if req.handoff is not None:
         handoff = req.handoff.model_dump()
         if any(value not in (None, "") for value in handoff.values()):
@@ -537,6 +584,7 @@ def generate_project(
         "spec": spec,
         "compliance": compliance_result,
         "cost": cost_result,
+        "market_directions": market_direction_result,
     })
     return result
 
@@ -576,6 +624,7 @@ def get_project(project_id: int, current_user: User = Depends(get_current_user),
         "spec": spec,
         "cost": cost,
         "compliance": compliance.check(spec),
+        "market_directions": market_directions.build(spec, str(spec.get("market_focus") or "balanced")),
     })
     return result
 
@@ -746,12 +795,9 @@ def generate_public_project(req: ProjectRequest, request: Request):
     """
     _prune_public_artifacts()
     _check_public_generation_limit(request)
-    spec = parse_construction_request(req.description)
-    if req.location and req.location.strip().lower() not in {"auto", "automatic"}:
-        spec["location"] = req.location.strip()
-    if req.budget is not None:
-        spec["budget_constraint"] = req.budget
-    spec = plan_gen.prepare_residential_guidance(spec, req.apply_bathroom_template)
+    spec, market_direction_result = _prepare_concept_spec(
+        req.description, req.location, req.budget, req.apply_bathroom_template, req.market_focus
+    )
     if req.handoff is not None:
         handoff = req.handoff.model_dump()
         if any(value not in (None, "") for value in handoff.values()):
@@ -797,8 +843,24 @@ def generate_public_project(req: ProjectRequest, request: Request):
         "spec": spec,
         "cost": cost_result,
         "compliance": compliance_result,
+        "market_directions": market_direction_result,
         "workbench": workbench.build(spec),
         "public_note": "This anonymous concept is not saved to an account and its artifact links expire in one hour.",
+    }
+
+
+@app.post("/api/v2/generate/market-variants")
+def generate_market_variants(req: MarketVariantRequest, request: Request):
+    """Return clean-room client-briefing directions without generating an approval or a saved project."""
+    _check_public_generation_limit(request)
+    spec, directions = _prepare_concept_spec(
+        req.description, req.location, req.budget, req.apply_bathroom_template, req.market_focus
+    )
+    return {
+        "status": "concept-directions-ready",
+        "spec": spec,
+        "market_directions": directions,
+        "note": "No plan, permit conclusion, construction specification, cost quote, client score or project record was created by this comparison.",
     }
 
 

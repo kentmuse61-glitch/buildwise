@@ -265,6 +265,15 @@ a { color: inherit; }
 .studio-program-copy small { margin-top: 2px; color: #8fac9c; font-size: 7px; text-transform: capitalize; }
 .studio-program-area { color: #97d7b8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 8px; white-space: nowrap; }
 .studio-empty { margin: 5px 0; color: #9eb5a8; font-size: 8px; line-height: 1.5; }
+.studio-market-direction { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(164, 207, 183, .14); }
+.studio-market-heading span, .studio-market-heading b { display: block; }
+.studio-market-heading span { color: #77c9a2; font-size: 7px; font-weight: 800; letter-spacing: .08em; }
+.studio-market-heading b { margin-top: 3px; color: #e7f2eb; font-size: 8px; }
+.studio-market-direction p { margin: 4px 0 5px; color: #a7bfb1; font-size: 7px; line-height: 1.4; }
+.studio-market-direction ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.studio-market-direction li { color: #b7cdbf; font-size: 7px; line-height: 1.4; }
+.studio-market-direction li::before { margin-right: 4px; color: #74c69d; content: "•"; }
+.studio-market-direction small { display: block; margin-top: 6px; color: #a9a47f; font-size: 7px; line-height: 1.35; }
 .studio-review-note { margin-top: 11px; padding: 8px; border: 1px solid #5b5933; border-radius: 6px; background: rgba(106, 91, 40, .16); }
 .studio-review-note strong, .studio-review-note span { display: block; }
 .studio-review-note strong { color: #ddc275; font-size: 8px; }
