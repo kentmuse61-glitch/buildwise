@@ -85,6 +85,8 @@ def parse_construction_request(text: str) -> dict[str, Any]:
         "foundation_type": "pad",
         "special_features": [],
         "budget_constraint": None,
+        "project_typology": "single_dwelling",
+        "concept_style": "",
         "raw_text": clean_text,
     }
 
@@ -92,6 +94,12 @@ def parse_construction_request(text: str) -> dict[str, Any]:
         spec["building_type"] = "commercial"
     elif any(word in lowered for word in ("church", "mosque", "temple", "school", "hospital", "clinic")):
         spec["building_type"] = "institutional"
+    if any(term in lowered for term in ("apartment", "apartments", "flat", "flats", "multi-family", "multifamily")):
+        # Preserve the residential screening category while exposing apartment
+        # floor plates to the concept generator; this is not a occupancy/code classification.
+        spec["project_typology"] = "apartment"
+    if "colonial" in lowered:
+        spec["concept_style"] = "colonial-inspired"
 
     bedroom_count = _count(lowered, r"\b(\d+)\s*[- ]*\s*(?:bedrooms?|beds?|br)\b")
     bathroom_count = _count(lowered, r"\b(\d+)\s*[- ]*\s*(?:bathrooms?|baths?|wcs?)\b")

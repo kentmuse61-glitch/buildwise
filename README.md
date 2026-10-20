@@ -11,6 +11,7 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 - SQLite locally and PostgreSQL on Render.
 - Lightweight, deterministic brief parser — no large model download or paid AI API key.
 - Generated schematic SVG floor plan, interactive in-browser GLB massing preview, downloadable glTF 2.0 binary (`.glb`) model, and CSV estimate export.
+- Multi-storey concepts use separate selectable 2D floor plates (Ground, Level 2, etc.) rather than presenting one floor as the whole building; every plate remains an approximate concept study.
 - Indicative sequential project schedule with a simple seasonal planning allowance.
 - Preliminary rule-screening output with clear non-approval disclaimers.
 - High-level GHS estimate with an editable starter rate table and visible uncertainty range.

@@ -118,6 +118,9 @@ class PlanGenerator:
         rooms = self._layout_rooms(spec)
         floors = self._positive_int(spec.get("floors"), default=1, minimum=1, maximum=50)
         building_type = str(spec.get("building_type") or "Building").replace("_", " ").title()
+        typology = str(spec.get("project_typology") or "").strip().lower()
+        if typology == "apartment":
+            building_type = "Apartment"
         location = str(spec.get("location") or "Ghana")
         design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
         active_floor = self._positive_int(design.get("active_floor"), default=1, minimum=1, maximum=floors)
@@ -286,22 +289,28 @@ class PlanGenerator:
         return self._layout_rooms(spec)
 
     def _layout_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        """Choose custom Design Studio geometry or a transparent starter grid."""
+        """Choose custom Design Studio geometry or a transparent starter floor plate.
+
+        Multi-storey concepts are deliberately generated as separate floor
+        plates.  A concept plan must never imply that one ground-floor drawing
+        describes the rooms on every level.
+        """
         design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
+        floors = self._positive_int(spec.get("floors"), default=1, minimum=1, maximum=50)
+        active_floor = self._positive_int(design.get("active_floor"), default=1, minimum=1, maximum=floors)
         custom_rooms = design.get("rooms") if isinstance(design.get("rooms"), list) else []
         if custom_rooms:
-            active_floor = self._positive_int(
-                design.get("active_floor"),
-                default=1,
-                minimum=1,
-                maximum=self._positive_int(spec.get("floors"), default=1, minimum=1, maximum=50),
-            )
             normalized = self._normalize_custom_rooms(custom_rooms, active_floor)
             if normalized:
                 return normalized
 
         building_type = str(spec.get("building_type") or "residential").strip().lower()
+        typology = str(spec.get("project_typology") or "").strip().lower()
+        if floors > 1 and typology == "apartment":
+            return self._layout_apartment_floor_rooms(spec, active_floor, floors)
         if building_type == "residential":
+            if floors > 1:
+                return self._layout_multistorey_residential_rooms(spec, active_floor, floors)
             return self._layout_ghana_residential_rooms(spec)
 
         bedrooms = self._positive_int(spec.get("bedrooms"), default=2, minimum=0, maximum=40)
@@ -354,6 +363,52 @@ class PlanGenerator:
             })
         return normalized
 
+    def _layout_multistorey_residential_rooms(self, spec: dict[str, Any], active_floor: int, floors: int) -> list[dict[str, Any]]:
+        """Create distinct concept floor plates for a multi-level dwelling."""
+        bedrooms = self._positive_int(spec.get("bedrooms"), default=2, minimum=0, maximum=40)
+        bathrooms = self._positive_int(spec.get("bathrooms"), default=1, minimum=0, maximum=40)
+        bedrooms_here = self._allocation_for_floor(bedrooms, active_floor, floors)
+        bathrooms_here = self._allocation_for_floor(bathrooms, active_floor, floors)
+        features = {str(item).lower() for item in spec.get("special_features", []) if isinstance(item, str)}
+        if active_floor == 1:
+            room_types = ["veranda_front", "living", "dining", "kitchen", "store", "stair", "landing"]
+        else:
+            room_types = ["stair", "landing", "family_lounge", "store"]
+            if active_floor == floors and "balcony" in features:
+                room_types.append("balcony")
+        room_types.extend(f"bedroom_{active_floor}_{number + 1}" for number in range(bedrooms_here))
+        room_types.extend(f"bathroom_{active_floor}_{number + 1}" for number in range(bathrooms_here))
+        if not bedrooms_here and active_floor == floors:
+            room_types.append("flex_room")
+        return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
+
+    def _layout_apartment_floor_rooms(self, spec: dict[str, Any], active_floor: int, floors: int) -> list[dict[str, Any]]:
+        """Create a repeatable apartment-floor concept plate with a visible core.
+
+        The arrangement is only a room-programme diagram. Unit count, fire
+        strategy, means of escape, accessibility, services and structure require
+        appointed professionals and site-specific development.
+        """
+        bedrooms = max(1, self._positive_int(spec.get("bedrooms"), default=2, minimum=1, maximum=40))
+        bathrooms = max(1, self._positive_int(spec.get("bathrooms"), default=1, minimum=1, maximum=40))
+        room_types = ["entry_lobby" if active_floor == 1 else "corridor", "stair", "landing"]
+        for unit in ("a", "b"):
+            room_types.extend([
+                f"unit_{unit}_living", f"unit_{unit}_kitchen",
+                *[f"unit_{unit}_bedroom_{number + 1}" for number in range(max(1, math.ceil(bedrooms / 2)))],
+                *[f"unit_{unit}_bathroom_{number + 1}" for number in range(max(1, math.ceil(bathrooms / 2)))],
+            ])
+        if active_floor == floors:
+            room_types.append("balcony")
+        return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
+
+    @staticmethod
+    def _allocation_for_floor(total: int, active_floor: int, floors: int) -> int:
+        """Distribute a declared room count across concept levels deterministically."""
+        base, remainder = divmod(max(0, total), max(1, floors))
+        return base + (1 if active_floor <= remainder else 0)
+
+
     def _layout_ghana_residential_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Make a transparent, Ghana-focused residential concept layout.
 
@@ -381,13 +436,17 @@ class PlanGenerator:
     def _records_for_types(room_types: list[str]) -> list[dict[str, Any]]:
         labels = {
             "living": "Living room", "kitchen": "Kitchen", "dining": "Dining area", "store": "Store / pantry",
-            "utility": "Utility", "laundry": "Laundry", "corridor": "Private corridor", "veranda_front": "Front veranda",
-            "veranda_back": "Back veranda", "wc_visitor": "Visitor WC",
+            "utility": "Utility", "laundry": "Laundry", "corridor": "Concept circulation", "veranda_front": "Front veranda",
+            "veranda_back": "Back veranda", "wc_visitor": "Visitor WC", "stair": "Stair / vertical core",
+            "landing": "Level landing", "family": "Family lounge", "entry": "Entry lobby", "flex": "Flexible room",
+            "balcony": "Balcony / outdoor space",
         }
         dimensions = {
             "living": (6.0, 5.0), "kitchen": (3.5, 3.0), "dining": (4.5, 3.5), "store": (2.2, 2.0),
             "utility": (3.5, 3.5), "laundry": (3.0, 3.0), "corridor": (5.5, 1.5), "veranda": (5.5, 2.0),
             "bedroom": (4.0, 3.5), "ensuite": (2.2, 2.0), "bathroom": (2.5, 2.2), "wc": (1.6, 1.5),
+            "stair": (3.0, 4.0), "landing": (3.0, 2.4), "family": (5.0, 4.0), "entry": (4.0, 3.0),
+            "flex": (4.0, 3.5), "balcony": (4.5, 2.0), "unit": (4.2, 3.5),
         }
         records: list[dict[str, Any]] = []
         for room_type in room_types:
@@ -402,6 +461,12 @@ class PlanGenerator:
                 label = "Master ensuite"
             elif room_type.startswith("bathroom_common_"):
                 label = f"Shared bathroom {room_type.rsplit('_', 1)[1]}"
+            elif room_type.startswith("unit_"):
+                parts = room_type.split("_")
+                unit = parts[1].upper() if len(parts) > 1 else "A"
+                kind = parts[2] if len(parts) > 2 else "room"
+                suffix = f" {parts[3]}" if len(parts) > 3 and parts[3].isdigit() else ""
+                label = f"Apartment {unit} · {kind.title()}{suffix}"
             records.append({"type": room_type, "label": label, "w": width, "h": height})
         return records
 

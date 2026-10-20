@@ -176,6 +176,26 @@ class ProjectApiTests(unittest.TestCase):
         self.assertIn("phases", schedule.json())
         self.assertEqual(self.client.get("/api/public/artifacts/not-a-token/model.glb").status_code, 404)
 
+    def test_public_three_storey_apartment_serves_each_floor_plan(self):
+        public = self.client.post("/api/public/project/generate", json={
+            "description": "A 3-storey colonial apartment in Kumasi with 6 bedrooms, 6 bathrooms and 540 sqm.",
+            "location": "Kumasi",
+        })
+        self.assertEqual(public.status_code, 200, public.text)
+        concept = public.json()
+        self.assertEqual(concept["spec"]["project_typology"], "apartment")
+        self.assertEqual(len(concept["floor_plan_urls"]), 3)
+        first = self.client.get(concept["floor_plan_urls"][0])
+        third = self.client.get(concept["floor_plan_urls"][2])
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(third.status_code, 200, third.text)
+        self.assertIn("LEVEL 1 OF 3", first.text)
+        self.assertIn("LEVEL 3 OF 3", third.text)
+        self.assertIn("Entry lobby", first.text)
+        self.assertIn("Balcony / outdoor space", third.text)
+        self.assertNotEqual(first.text, third.text)
+        self.assertEqual(self.client.get(concept["floor_plan_urls"][2].replace("plan-floor-3.svg", "plan-floor-4.svg")).status_code, 404)
+
     def test_market_direction_endpoint_is_bounded_and_non_persistent(self):
         response = self.client.post("/api/v2/generate/market-variants", json={
             "description": "A two-storey, 3-bedroom family home in Kumasi with solar power and a balcony.",

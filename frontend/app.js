@@ -257,6 +257,15 @@ function projectDetailMarkup(project, embedded = false) {
   const compliance = project.compliance || {};
   const id = projectIdValue(project);
   const isPublic = Boolean(project.is_public);
+  const displayTypology = spec.project_typology === "apartment" ? "Apartment" : (spec.building_type || project.building_type || "Residential");
+  const floorCount = Math.min(50, Math.max(1, Number(spec.floors || project.floors || 1)));
+  const configuredFloor = Number(spec.design_studio?.active_floor || 1);
+  const initialPlanFloor = Math.min(floorCount, Math.max(1, Number.isFinite(configuredFloor) ? configuredFloor : 1));
+  const floorPlanTabs = floorCount > 1 ? `<div id="plan-floor-tabs" class="plan-floor-tabs" role="group" aria-label="Choose a concept floor plan">${Array.from({ length: floorCount }, (_, index) => {
+    const floor = index + 1;
+    const label = floor === 1 ? "Ground" : `Level ${floor}`;
+    return `<button class="plan-floor-button ${floor === initialPlanFloor ? "active" : ""}" type="button" data-plan-floor="${floor}" aria-pressed="${floor === initialPlanFloor}">${label}</button>`;
+  }).join("")}</div>` : "";
   const warningItems = [
     ...(compliance.issues || []).map((item) => ({ item, pass: false })),
     ...(compliance.warnings || []).slice(0, 6).map((item) => ({ item, pass: false })),
@@ -265,12 +274,12 @@ function projectDetailMarkup(project, embedded = false) {
   const materials = cost.materials || [];
   return `
     ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div>${isPublic ? `<div class="disclaimer-box public-concept-note">Temporary guest concept · artifact links expire after one hour.</div>` : `<div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${escapeHtml(id)}">↓ Download 3D</button><button class="button button-secondary" type="button" data-action="print-handoff" data-project-id="${escapeHtml(id)}">Print handoff</button><button class="button button-quiet" type="button" data-action="download-handoff" data-project-id="${escapeHtml(id)}">Handoff JSON</button><button class="button button-quiet" type="button" data-action="delete-project" data-project-id="${escapeHtml(id)}">Delete</button></div>`}</div>`}
-    <section class="detail-summary"><div class="detail-summary-main"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span><p>${escapeHtml(project.description || spec.raw_text || "No description")}</p><div class="detail-metrics"><span class="detail-metric"><strong>${escapeHtml(spec.building_type || project.building_type || "Residential")}</strong></span><span class="detail-metric"><strong>${Number(spec.floors || project.floors || 1)}</strong> floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span><span class="detail-metric"><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong> total area</span><span class="detail-metric"><strong>${Number(spec.bedrooms || 0)}</strong> bed · <strong>${Number(spec.bathrooms || 0)}</strong> bath</span><span class="detail-metric">${escapeHtml(spec.location || project.location || "Ghana")}</span></div></div><div class="detail-cost"><span>Indicative estimate</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong><small>GHS · concept estimate</small></div></section>
+    <section class="detail-summary"><div class="detail-summary-main"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span><p>${escapeHtml(project.description || spec.raw_text || "No description")}</p><div class="detail-metrics"><span class="detail-metric"><strong>${escapeHtml(displayTypology)}</strong></span><span class="detail-metric"><strong>${Number(spec.floors || project.floors || 1)}</strong> floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span><span class="detail-metric"><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong> total area</span><span class="detail-metric"><strong>${Number(spec.bedrooms || 0)}</strong> bed · <strong>${Number(spec.bathrooms || 0)}</strong> bath</span><span class="detail-metric">${escapeHtml(spec.location || project.location || "Ghana")}</span></div></div><div class="detail-cost"><span>Indicative estimate</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong><small>GHS · concept estimate</small></div></section>
     <section class="panel studio-console" aria-label="Design studio console">
         <div class="panel-heading studio-console-heading"><div><div class="page-kicker">CONCEPT STUDIO</div><h3>2D / 3D design console</h3><p>Compare the generated plan and massing model. All geometry is a concept study for professional review.</p></div><div class="studio-view-toggle" role="group" aria-label="Choose studio view"><button class="studio-view-button" type="button" data-action="studio-view" data-studio-view="2d" aria-pressed="false">2D plan</button><button class="studio-view-button active" type="button" data-action="studio-view" data-studio-view="split" aria-pressed="true">Split</button><button class="studio-view-button" type="button" data-action="studio-view" data-studio-view="3d" aria-pressed="false">3D massing</button></div></div>
         <div id="studio-console" class="studio-viewport" data-studio-mode="split">
-          <section class="studio-canvas-pane" data-studio-pane="plan"><div class="studio-canvas-header"><span>01 · Plan study</span><span class="studio-canvas-chip">Approximate dimensions</span></div><div class="plan-stage"><img id="plan-image" alt="Dimensioned schematic concept floor plan" src="" /><span class="artifact-loading" id="plan-loading">Preparing plan…</span></div></section>
-          <section class="studio-canvas-pane" data-studio-pane="model"><div class="studio-canvas-header"><span>02 · Massing model</span><span class="studio-canvas-chip">Orbit to inspect</span></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div></section>
+          <section class="studio-canvas-pane" data-studio-pane="plan"><div class="studio-canvas-header"><span>01 · Floor-plan study</span><span id="plan-floor-indicator" class="studio-canvas-chip">${floorCount > 1 ? `Level ${initialPlanFloor} of ${floorCount}` : "Approximate dimensions"}</span></div>${floorPlanTabs}<div class="plan-stage"><img id="plan-image" alt="Dimensioned schematic concept floor plan, level ${initialPlanFloor} of ${floorCount}" src="" /><span class="artifact-loading" id="plan-loading">Preparing floor plan…</span></div></section>
+          <section class="studio-canvas-pane" data-studio-pane="model"><div class="studio-canvas-header"><span>02 · Massing model</span><span class="studio-canvas-chip">${floorCount} level${floorCount === 1 ? "" : "s"} · orbit to inspect</span></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div></section>
           <aside class="studio-inspector" aria-label="Spatial-program inspector"><div class="studio-inspector-heading"><span>SPATIAL PROGRAM</span><span class="studio-live-dot">CONCEPT</span></div><div class="studio-program-stats"><span><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")}</strong> m² total</span><span><strong>${Number(spec.floors || project.floors || 1)}</strong> level${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="studio-spatial-program" class="studio-program-list"><div class="artifact-loading">Loading room program…</div></div><div id="studio-market-direction" class="studio-market-direction"><div class="artifact-loading">Loading concept direction…</div></div><div class="studio-review-note"><strong>Review state</strong><span>${escapeHtml(compliance.status || project.compliance_status || "Professional review required")}</span><p>Not a code screen, structural check, permit drawing, IFC model or construction issue.</p></div></aside>
         </div>
         <div class="studio-quantity-lens" aria-label="Concept quantity lens"><div class="studio-quantity-heading"><span>CONCEPT QTO LENS</span><small>Transparent allowances · not a procurement or construction quantity</small></div><div class="studio-quantity-metrics"><div><span>Indicative cost</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong></div><div><span>Gross floor area</span><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong></div><div id="studio-qto-summary"><span>Quantity allowances load with the concept workspace.</span></div><div class="studio-carbon-note">Carbon/LCA requires verified material quantities and EPD inputs.</div></div></div>
@@ -341,17 +350,53 @@ async function initProjectArtifacts(project) {
   }
   const planImage = $("#plan-image");
   const planLoading = $("#plan-loading");
-  if (planImage) {
+  const floorCount = Math.min(50, Math.max(1, Number(project.spec?.floors || project.floors || 1)));
+  const startingFloor = Math.min(floorCount, Math.max(1, Number(project.spec?.design_studio?.active_floor || 1)));
+  const floorPlanUrls = Array.isArray(project.floor_plan_urls) ? project.floor_plan_urls : [];
+  const planUrlForFloor = (floor) => {
+    if (isPublic) return floorPlanUrls[floor - 1] || (floor === 1 ? project.plan_url : "");
+    return `${artifactUrl("plan")}?floor=${encodeURIComponent(floor)}`;
+  };
+  let planRequestId = 0;
+  const loadPlanFloor = async (floor) => {
+    if (!planImage) return;
+    const selectedFloor = Math.min(floorCount, Math.max(1, Number(floor) || 1));
+    const requestId = ++planRequestId;
+    const urlToLoad = planUrlForFloor(selectedFloor);
+    const indicator = $("#plan-floor-indicator");
+    if (planLoading) {
+      planLoading.hidden = false;
+      planLoading.textContent = "Preparing floor plan…";
+    }
+    $$("[data-plan-floor]").forEach((button) => {
+      const active = Number(button.dataset.planFloor) === selectedFloor;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    if (indicator && floorCount > 1) indicator.textContent = `Level ${selectedFloor} of ${floorCount}`;
+    planImage.alt = `Dimensioned schematic concept floor plan, level ${selectedFloor} of ${floorCount}`;
+    if (!urlToLoad) {
+      if (planLoading) planLoading.textContent = "This floor plan is unavailable.";
+      return;
+    }
     try {
-      const blob = await api(artifactUrl("plan"));
-      const url = URL.createObjectURL(blob);
-      planImage.onload = () => { if (planLoading) planLoading.hidden = true; };
-      planImage.onerror = () => { if (planLoading) planLoading.textContent = "Could not display the plan."; };
-      planImage.src = url;
+      const blob = await api(urlToLoad);
+      if (requestId !== planRequestId) return;
+      const previousUrl = planImage.dataset.objectUrl;
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+      const objectUrl = URL.createObjectURL(blob);
+      planImage.dataset.objectUrl = objectUrl;
+      planImage.onload = () => { if (requestId === planRequestId && planLoading) planLoading.hidden = true; };
+      planImage.onerror = () => { if (requestId === planRequestId && planLoading) planLoading.textContent = "Could not display this floor plan."; };
+      planImage.src = objectUrl;
       if (planImage.complete && planImage.naturalWidth && planLoading) planLoading.hidden = true;
     } catch (error) {
-      if (planLoading) planLoading.textContent = "Could not prepare the plan.";
+      if (requestId === planRequestId && planLoading) planLoading.textContent = "Could not prepare this floor plan.";
     }
+  };
+  if (planImage) {
+    $$("[data-plan-floor]").forEach((button) => button.addEventListener("click", () => loadPlanFloor(Number(button.dataset.planFloor))));
+    await loadPlanFloor(startingFloor);
   }
   const scheduleContainer = $("#schedule-container");
   if (scheduleContainer) {

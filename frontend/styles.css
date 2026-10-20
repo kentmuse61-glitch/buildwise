@@ -445,3 +445,11 @@ a { color: inherit; }
 
 /* Public, no-login concept mode */
 .public-concept-note { margin: 0; max-width: 230px; text-align: left; }
+
+/* Multi-level concept plates: each selector fetches an independent plan rather
+   than implying that the ground floor describes every storey. */
+.plan-floor-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 8px; }
+.plan-floor-button { min-height: 25px; border: 1px solid #31594a; border-radius: 4px; padding: 3px 7px; background: #10251e; color: #9fc5b0; font-size: 8px; font-weight: 800; cursor: pointer; }
+.plan-floor-button:hover { border-color: #5aab84; color: #eff8f1; }
+.plan-floor-button.active { border-color: #70c59a; background: #3d9670; color: #072016; }
+@media (max-width: 700px) { .plan-floor-tabs { margin-top: 0; } .plan-floor-button { flex: 1 0 auto; } }

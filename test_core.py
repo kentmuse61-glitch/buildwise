@@ -94,6 +94,28 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertNotIn("Ground only", svg)
         self.assertIn("6.0 m × 5.0 m", svg)
 
+    def test_three_storey_apartment_has_distinct_floor_plan_plates(self):
+        spec = parse_construction_request(
+            "A 3-storey colonial apartment in Kumasi with 6 bedrooms, 6 bathrooms and 540 sqm total floor area."
+        )
+        self.assertEqual(spec["floors"], 3)
+        self.assertEqual(spec["project_typology"], "apartment")
+        self.assertEqual(spec["concept_style"], "colonial-inspired")
+        generator = PlanGenerator()
+        floor_svgs = []
+        for floor in (1, 2, 3):
+            floor_spec = {**spec, "design_studio": {"active_floor": floor}}
+            svg = generator.build_svg(floor_spec)
+            floor_svgs.append(svg)
+            self.assertIn(f"LEVEL {floor} OF 3", svg)
+            self.assertIn("Stair / vertical core", svg)
+            self.assertIn("Apartment A", svg)
+            ElementTree.fromstring(svg)
+        self.assertIn("Entry lobby", floor_svgs[0])
+        self.assertIn("Concept circulation", floor_svgs[1])
+        self.assertIn("Balcony / outdoor space", floor_svgs[2])
+        self.assertNotEqual(floor_svgs[0], floor_svgs[2])
+
     def test_glb_header_and_length(self):
         with tempfile.TemporaryDirectory() as directory:
             generator = Model3DGenerator(directory)

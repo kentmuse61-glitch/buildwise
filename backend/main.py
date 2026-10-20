@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 from sqlalchemy import text
@@ -67,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.2.4",
+    version="1.2.5",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
@@ -381,6 +381,31 @@ def _prepare_concept_spec(
     return spec, directions
 
 
+def _concept_display_type(spec: dict[str, Any]) -> str:
+    """Use a parsed concept typology for labels without changing code screening class."""
+    if str(spec.get("project_typology") or "").strip().lower() == "apartment":
+        return "Apartment"
+    return str(spec.get("building_type") or "Building").replace("_", " ").title()
+
+
+def _concept_floor_count(spec: dict[str, Any]) -> int:
+    """Return a bounded level count for display-only plan plate selection."""
+    try:
+        return min(max(int(spec.get("floors", 1)), 1), 50)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _plan_spec_for_floor(spec: dict[str, Any], floor: int) -> dict[str, Any]:
+    """Select one concept floor plate without mutating the project brief."""
+    selected_floor = min(max(int(floor), 1), _concept_floor_count(spec))
+    plan_spec = dict(spec)
+    design = dict(spec.get("design_studio")) if isinstance(spec.get("design_studio"), dict) else {}
+    design["active_floor"] = selected_floor
+    plan_spec["design_studio"] = design
+    return plan_spec
+
+
 def _load_project_spec(project: Project) -> dict[str, Any]:
     try:
         value = json.loads(project.spec_json or "{}")
@@ -548,7 +573,7 @@ def generate_project(
 
     compliance_result = compliance.check(spec)
     cost_result = _estimate_cost(spec)
-    project_name = req.name.strip() if req.name and req.name.strip() else f"{str(spec['building_type']).title()} concept · {spec['location']}"
+    project_name = req.name.strip() if req.name and req.name.strip() else f"{_concept_display_type(spec)} concept · {spec['location']}"
     project = Project(
         user_id=current_user.id,
         name=project_name[:200],
@@ -805,7 +830,7 @@ def generate_public_project(req: ProjectRequest, request: Request):
 
     compliance_result = compliance.check(spec)
     cost_result = _estimate_cost(spec)
-    project_name = req.name.strip() if req.name and req.name.strip() else f"{str(spec['building_type']).title()} concept · {spec['location']}"
+    project_name = req.name.strip() if req.name and req.name.strip() else f"{_concept_display_type(spec)} concept · {spec['location']}"
     token = secrets.token_urlsafe(24)
     artifact_id = f"public-{token}"
     try:
@@ -820,8 +845,11 @@ def generate_public_project(req: ProjectRequest, request: Request):
         raise HTTPException(status_code=500, detail="Public concept artifacts were not created")
     created_at = datetime.now(timezone.utc)
     expires_at = created_at + _PUBLIC_ARTIFACT_TTL
-    _public_artifacts[token] = {"paths": paths, "expires_at": expires_at}
+    # The parsed brief remains process-local with the time-limited artifact
+    # record, solely to serve a selected floor plate. It never creates a Project row.
+    _public_artifacts[token] = {"paths": paths, "spec": spec, "expires_at": expires_at}
     prefix = f"/api/public/artifacts/{token}"
+    floor_plan_urls = [f"{prefix}/plan-floor-{floor}.svg" for floor in range(1, _concept_floor_count(spec) + 1)]
     return {
         "id": token,
         "is_public": True,
@@ -838,6 +866,7 @@ def generate_public_project(req: ProjectRequest, request: Request):
         "status": "temporary-public-concept",
         "created_at": created_at.isoformat(),
         "plan_url": f"{prefix}/plan.svg",
+        "floor_plan_urls": floor_plan_urls,
         "model_3d_url": f"{prefix}/model.glb",
         "schedule_url": f"{prefix}/schedule.json",
         "spec": spec,
@@ -866,26 +895,50 @@ def generate_market_variants(req: MarketVariantRequest, request: Request):
 
 @app.get("/api/public/artifacts/{token}/{artifact_name}")
 def get_public_artifact(token: str, artifact_name: str):
-    """Serve one temporary public concept artifact through an unguessable link."""
+    """Serve a temporary public artifact or a bounded selected-floor plan plate."""
     _prune_public_artifacts()
     record = _public_artifacts.get(token)
     if record is None:
         raise HTTPException(status_code=404, detail="Public concept artifact not found or expired")
-    allowed_types = {
-        "plan.svg": "image/svg+xml",
-        "model.glb": "model/gltf-binary",
-        "schedule.json": "application/json",
-    }
-    path = record.get("paths", {}).get(artifact_name)
-    if artifact_name not in allowed_types or not isinstance(path, Path) or not path.is_file():
+    paths = record.get("paths")
+    if not isinstance(paths, dict):
+        raise HTTPException(status_code=404, detail="Public concept artifact not found or expired")
+
+    # Strict route matching and the in-memory temporary brief prevent a floor
+    # request from reading arbitrary paths or another user's project.
+    floor_match = re.fullmatch(r"plan-floor-([1-9][0-9]?)\.svg", artifact_name)
+    if floor_match:
+        spec = record.get("spec")
+        floor = int(floor_match.group(1))
+        if not isinstance(spec, dict) or floor > _concept_floor_count(spec):
+            raise HTTPException(status_code=404, detail="Floor plan not found")
+        path = paths.get(artifact_name)
+        if path is None:
+            try:
+                path = Path(plan_gen.generate_plan(_plan_spec_for_floor(spec, floor), f"public-{token}-floor-{floor}")).resolve()
+            except (OSError, TypeError, ValueError, ArithmeticError) as error:
+                raise HTTPException(status_code=500, detail="Could not generate the selected floor plan") from error
+            paths[artifact_name] = path
+        media_type = "image/svg+xml"
+    else:
+        allowed_types = {
+            "plan.svg": "image/svg+xml",
+            "model.glb": "model/gltf-binary",
+            "schedule.json": "application/json",
+        }
+        if artifact_name not in allowed_types:
+            raise HTTPException(status_code=404, detail="Public concept artifact not found or expired")
+        path = paths.get(artifact_name)
+        media_type = allowed_types[artifact_name]
+
+    if not isinstance(path, Path) or not path.is_file() or path.parent != OUTPUT_DIR:
         raise HTTPException(status_code=404, detail="Public concept artifact not found or expired")
     return FileResponse(
         path,
-        media_type=allowed_types[artifact_name],
+        media_type=media_type,
         filename=f"buildwise-public-{artifact_name}",
         headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
     )
-
 
 @app.post("/api/debug/generate-test")
 def generate_test_artifacts(current_user: User = Depends(get_current_user)):
@@ -948,12 +1001,23 @@ def get_debug_artifact(artifact_name: str, current_user: User = Depends(get_curr
 
 
 @app.get("/api/projects/{project_id}/artifacts/plan.svg")
-def get_project_plan(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+def get_project_plan(
+    project_id: int,
+    floor: int | None = Query(default=None, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Generate one selected concept floor plate for an owned project."""
     project = _get_owned_project(project_id, current_user, db)
     spec = _load_project_spec(project)
-    path = plan_gen.generate_plan(spec, project.id)
-    return FileResponse(path, media_type="image/svg+xml", filename=f"concept-plan-{project.id}.svg")
-
+    design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
+    requested_floor = floor if floor is not None else design.get("active_floor", 1)
+    try:
+        selected_floor = min(max(int(requested_floor), 1), _concept_floor_count(spec))
+    except (TypeError, ValueError):
+        selected_floor = 1
+    path = plan_gen.generate_plan(_plan_spec_for_floor(spec, selected_floor), f"{project.id}-floor-{selected_floor}")
+    return FileResponse(path, media_type="image/svg+xml", filename=f"concept-plan-{project.id}-floor-{selected_floor}.svg")
 
 @app.get("/api/projects/{project_id}/artifacts/model.glb")
 def get_project_model(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
