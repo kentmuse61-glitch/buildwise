@@ -107,25 +107,35 @@ class PlanGenerator:
         return self._build_svg(spec)
 
     def _build_svg(self, spec: dict[str, Any]) -> str:
-        """Build a clean SVG plan, keeping all user text XML-safe."""
+        """Build a presentation-quality concept plan with clear visual hierarchy.
+
+        The output is a diagrammatic design-study sheet: it communicates spatial
+        organisation, approximate room sizes, demarcations, openings and overall
+        dimensions. It deliberately does not claim wall build-ups, structural
+        members, accessibility clearances, services coordination or setting-out
+        accuracy.
+        """
         rooms = self._layout_rooms(spec)
         floors = self._positive_int(spec.get("floors"), default=1, minimum=1, maximum=50)
         building_type = str(spec.get("building_type") or "Building").replace("_", " ").title()
         location = str(spec.get("location") or "Ghana")
+        design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
+        active_floor = self._positive_int(design.get("active_floor"), default=1, minimum=1, maximum=floors)
 
-        total_width = max((room["x"] + room["w"] for room in rooms), default=10.0)
-        total_height = max((room["y"] + room["h"] for room in rooms), default=8.0)
-        canvas_width, canvas_height = 980, 700
-        margin_x, margin_top, margin_bottom = 100, 130, 100
-        available_width = canvas_width - margin_x * 2
+        min_x = min((float(room["x"]) for room in rooms), default=0.0)
+        min_y = min((float(room["y"]) for room in rooms), default=0.0)
+        max_x = max((float(room["x"]) + float(room["w"]) for room in rooms), default=10.0)
+        max_y = max((float(room["y"]) + float(room["h"]) for room in rooms), default=8.0)
+        total_width = max(1.0, max_x - min_x)
+        total_height = max(1.0, max_y - min_y)
+        canvas_width, canvas_height = 1120, 820
+        margin_left, margin_right, margin_top, margin_bottom = 160, 160, 170, 150
+        available_width = canvas_width - margin_left - margin_right
         available_height = canvas_height - margin_top - margin_bottom
-        scale = min(available_width / total_width, available_height / total_height, 55.0)
-        offset_x = (canvas_width - total_width * scale) / 2
+        scale = min(available_width / total_width, available_height / total_height, 68.0)
+        offset_x = margin_left + (available_width - total_width * scale) / 2
         offset_y = margin_top + (available_height - total_height * scale) / 2
 
-        # Build SVG markup directly from a fixed element vocabulary. User-derived
-        # content is escaped before insertion; this generator never parses XML.
-        # Avoiding XML parser APIs also prevents XML entity-expansion attack paths.
         parts: list[str] = []
 
         def element(name: str, attrs: dict[str, str] | None = None, text: str | None = None) -> None:
@@ -138,77 +148,133 @@ class PlanGenerator:
             else:
                 parts.append(f"<{name}{attributes}>{html.escape(str(text), quote=False)}</{name}>")
 
+        def px_x(value: float) -> float:
+            return offset_x + (value - min_x) * scale
+
+        def px_y(value: float) -> float:
+            return offset_y + (value - min_y) * scale
+
         parts.append(
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas_width}" height="{canvas_height}" '
-            f'viewBox="0 0 {canvas_width} {canvas_height}" role="img" aria-label="Schematic concept floor plan">'
+            f'viewBox="0 0 {canvas_width} {canvas_height}" role="img" aria-label="Modern schematic concept floor plan">'
         )
-        parts.append("""<style>
-            .room { stroke: #53645f; stroke-width: 2; vector-effect: non-scaling-stroke; }
-            .wall { stroke: #253c35; stroke-width: 4; fill: none; vector-effect: non-scaling-stroke; }
-            .label { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: 700; fill: #24332e; }
-            .dimension { font-family: Arial, Helvetica, sans-serif; font-size: 11px; fill: #60716b; }
-            .title { font-family: Arial, Helvetica, sans-serif; font-size: 22px; font-weight: 700; fill: #24332e; }
-            .subtitle { font-family: Arial, Helvetica, sans-serif; font-size: 12px; fill: #687974; }
+        parts.append("""<defs>
+          <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M 34 0 L 0 0 0 34" fill="none" stroke="#dde8e1" stroke-width="1"/></pattern>
+          <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#61746a"/></marker>
+          <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#183a2b" flood-opacity=".12"/></filter>
+        </defs><style>
+          .sheet-title { font-family: Arial,Helvetica,sans-serif; font-size: 27px; font-weight: 800; letter-spacing: .04em; fill: #17362b; }
+          .sheet-subtitle { font-family: Arial,Helvetica,sans-serif; font-size: 12px; letter-spacing: .08em; fill: #668076; }
+          .room { stroke: #315346; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+          .inner-wall { stroke: #29483b; stroke-width: 3.2; vector-effect: non-scaling-stroke; }
+          .outer-wall { stroke: #183c30; stroke-width: 10; fill: none; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+          .room-label { font-family: Arial,Helvetica,sans-serif; font-size: 13px; font-weight: 800; fill: #203b31; }
+          .room-area { font-family: Arial,Helvetica,sans-serif; font-size: 10px; fill: #597268; }
+          .dimension { font-family: Arial,Helvetica,sans-serif; font-size: 10px; fill: #566e63; letter-spacing: .03em; }
+          .note { font-family: Arial,Helvetica,sans-serif; font-size: 10px; fill: #667b71; }
+          .window { stroke: #57a7bf; stroke-width: 7; stroke-linecap: square; vector-effect: non-scaling-stroke; }
+          .door { stroke: #8a6043; stroke-width: 2; fill: none; vector-effect: non-scaling-stroke; }
+          .furniture { stroke: #83988d; stroke-width: 1; fill: #ffffff; fill-opacity: .65; }
         </style>""")
-        element("rect", {"x": "0", "y": "0", "width": str(canvas_width), "height": str(canvas_height), "fill": "#fbfcfa"})
-        element("text", {"x": str(canvas_width // 2), "y": "42", "text-anchor": "middle", "class": "title"}, f"{building_type} concept plan")
-        element(
-            "text",
-            {"x": str(canvas_width // 2), "y": "66", "text-anchor": "middle", "class": "subtitle"},
-            f"{floors} floor{'s' if floors != 1 else ''} · {location} · schematic only",
-        )
-        guidance = spec.get("planning_guidance") if isinstance(spec.get("planning_guidance"), dict) else {}
-        if guidance.get("profile"):
-            element(
-                "text",
-                {"x": str(canvas_width // 2), "y": "88", "text-anchor": "middle", "class": "subtitle"},
-                "Ghana-focused planning template · not a code or permit approval",
-            )
+        element("rect", {"x": "0", "y": "0", "width": str(canvas_width), "height": str(canvas_height), "fill": "#f8fbf8"})
+        element("rect", {"x": "26", "y": "26", "width": str(canvas_width - 52), "height": str(canvas_height - 52), "rx": "18", "fill": "#ffffff", "stroke": "#dce9e1"})
+        element("rect", {"x": "56", "y": "122", "width": str(canvas_width - 112), "height": str(canvas_height - 212), "rx": "12", "fill": "url(#grid)", "stroke": "#e3ede6"})
+        element("text", {"x": "58", "y": "70", "class": "sheet-title"}, f"{building_type} · CONCEPT PLAN")
+        template_note = " · Ghana-focused planning template · not a code or permit approval" if spec.get("planning_guidance") else ""
+        element("text", {"x": "58", "y": "94", "class": "sheet-subtitle"}, f"{location}  /  LEVEL {active_floor} OF {floors}  /  DESIGN STUDY{template_note}")
+        element("text", {"x": str(canvas_width - 58), "y": "70", "text-anchor": "end", "class": "sheet-subtitle"}, "BUILDWISE GH · REVISION 01")
+        element("text", {"x": str(canvas_width - 58), "y": "94", "text-anchor": "end", "class": "note"}, "DIMENSIONS ARE CONCEPTUAL")
 
-        for room in rooms:
-            x = room["x"] * scale + offset_x
-            y = room["y"] * scale + offset_y
-            width = room["w"] * scale
-            height = room["h"] * scale
-            element(
-                "rect",
-                {
-                    "x": f"{x:.2f}", "y": f"{y:.2f}", "width": f"{width:.2f}", "height": f"{height:.2f}",
-                    "rx": "2", "class": "room", "fill": self._room_color(room["type"]),
-                },
-            )
-            text_x = x + width / 2
-            text_y = y + height / 2
-            element("text", {"x": f"{text_x:.2f}", "y": f"{text_y - 3:.2f}", "text-anchor": "middle", "class": "label"}, room["label"])
-            if width >= 90 and height >= 58:
-                element(
-                    "text",
-                    {"x": f"{text_x:.2f}", "y": f"{text_y + 16:.2f}", "text-anchor": "middle", "class": "dimension"},
-                    f"{room['w']:.1f} m × {room['h']:.1f} m",
-                )
+        # 1 m guide grid aligned to the concept envelope.
+        for metre in range(0, min(41, math.ceil(total_width) + 1)):
+            x = px_x(min_x + metre)
+            element("line", {"x1": f"{x:.2f}", "y1": f"{offset_y:.2f}", "x2": f"{x:.2f}", "y2": f"{offset_y + total_height * scale:.2f}", "stroke": "#dce9e1", "stroke-width": "0.55", "stroke-dasharray": "2 5"})
+        for metre in range(0, min(41, math.ceil(total_height) + 1)):
+            y = px_y(min_y + metre)
+            element("line", {"x1": f"{offset_x:.2f}", "y1": f"{y:.2f}", "x2": f"{offset_x + total_width * scale:.2f}", "y2": f"{y:.2f}", "stroke": "#dce9e1", "stroke-width": "0.55", "stroke-dasharray": "2 5"})
 
-        element(
-            "rect",
-            {"x": f"{offset_x:.2f}", "y": f"{offset_y:.2f}", "width": f"{total_width * scale:.2f}", "height": f"{total_height * scale:.2f}", "class": "wall"},
-        )
-        element(
-            "text",
-            {"x": f"{canvas_width / 2:.2f}", "y": f"{offset_y - 24:.2f}", "text-anchor": "middle", "class": "dimension"},
-            f"Approx. overall width: {total_width:.1f} m",
-        )
-        element(
-            "text",
-            {"x": f"{canvas_width / 2:.2f}", "y": f"{offset_y + total_height * scale + 24:.2f}", "text-anchor": "middle", "class": "dimension"},
-            f"Approx. overall depth: {total_height:.1f} m",
-        )
-        element("rect", {"x": "22", "y": "645", "width": "936", "height": "34", "rx": "8", "fill": "#f0f4f1"})
-        element(
-            "text",
-            {"x": "38", "y": "667", "class": "dimension"},
-            "Concept layout only — not for permits, construction, structural design, or setting out.",
-        )
+        room_pixels: list[dict[str, Any]] = []
+        for room_index, room in enumerate(rooms, start=1):
+            x = px_x(float(room["x"]))
+            y = px_y(float(room["y"]))
+            width = float(room["w"]) * scale
+            height = float(room["h"]) * scale
+            room_pixels.append({"room": room, "x": x, "y": y, "width": width, "height": height})
+            element("rect", {"x": f"{x:.2f}", "y": f"{y:.2f}", "width": f"{width:.2f}", "height": f"{height:.2f}", "rx": "2", "class": "room", "fill": self._room_color(room["type"]), "filter": "url(#shadow)"})
+            # Interior demarcation line reinforces room boundaries when colours are similar.
+            element("rect", {"x": f"{x + 2:.2f}", "y": f"{y + 2:.2f}", "width": f"{max(width - 4, 1):.2f}", "height": f"{max(height - 4, 1):.2f}", "rx": "1", "fill": "none", "class": "inner-wall"})
+            label_x, label_y = x + width / 2, y + height / 2
+            area = float(room["w"]) * float(room["h"])
+            element("text", {"x": f"{label_x:.2f}", "y": f"{label_y - 7:.2f}", "text-anchor": "middle", "class": "room-label"}, room["label"])
+            element("text", {"x": f"{label_x:.2f}", "y": f"{label_y + 10:.2f}", "text-anchor": "middle", "class": "room-area"}, f"R{room_index:02d} · {area:.1f} m² · {room['w']:.1f} m × {room['h']:.1f} m")
+            self._append_concept_furniture(element, str(room["type"]), x, y, width, height)
+            # Symbolic opening only: placement is a visual cue, not a door schedule.
+            if width > 90 and height > 65:
+                door_x = x + width * 0.18
+                door_y = y + height - 3
+                radius = min(25.0, width * 0.16, height * 0.24)
+                element("path", {"d": f"M {door_x:.2f} {door_y:.2f} L {door_x + radius:.2f} {door_y:.2f} M {door_x:.2f} {door_y:.2f} A {radius:.2f} {radius:.2f} 0 0 1 {door_x + radius:.2f} {door_y - radius:.2f}", "class": "door"})
+
+        # Overall envelope and schematic glazing along exterior-facing zones.
+        outer_x, outer_y = offset_x, offset_y
+        outer_w, outer_h = total_width * scale, total_height * scale
+        element("rect", {"x": f"{outer_x:.2f}", "y": f"{outer_y:.2f}", "width": f"{outer_w:.2f}", "height": f"{outer_h:.2f}", "rx": "3", "class": "outer-wall"})
+        for item in room_pixels:
+            x, y, width, height = item["x"], item["y"], item["width"], item["height"]
+            if abs(y - outer_y) < 2:
+                element("line", {"x1": f"{x + width * .24:.2f}", "y1": f"{outer_y:.2f}", "x2": f"{x + width * .76:.2f}", "y2": f"{outer_y:.2f}", "class": "window"})
+            if abs((y + height) - (outer_y + outer_h)) < 2:
+                element("line", {"x1": f"{x + width * .24:.2f}", "y1": f"{outer_y + outer_h:.2f}", "x2": f"{x + width * .76:.2f}", "y2": f"{outer_y + outer_h:.2f}", "class": "window"})
+            if abs(x - outer_x) < 2:
+                element("line", {"x1": f"{outer_x:.2f}", "y1": f"{y + height * .25:.2f}", "x2": f"{outer_x:.2f}", "y2": f"{y + height * .75:.2f}", "class": "window"})
+            if abs((x + width) - (outer_x + outer_w)) < 2:
+                element("line", {"x1": f"{outer_x + outer_w:.2f}", "y1": f"{y + height * .25:.2f}", "x2": f"{outer_x + outer_w:.2f}", "y2": f"{y + height * .75:.2f}", "class": "window"})
+
+        # Overall dimensions with extension lines and arrowheads.
+        dim_y = outer_y - 52
+        for x in (outer_x, outer_x + outer_w):
+            element("line", {"x1": f"{x:.2f}", "y1": f"{outer_y - 8:.2f}", "x2": f"{x:.2f}", "y2": f"{dim_y + 8:.2f}", "stroke": "#80948a", "stroke-width": "1"})
+        element("line", {"x1": f"{outer_x:.2f}", "y1": f"{dim_y:.2f}", "x2": f"{outer_x + outer_w:.2f}", "y2": f"{dim_y:.2f}", "stroke": "#61746a", "stroke-width": "1.2", "marker-start": "url(#arrow)", "marker-end": "url(#arrow)"})
+        element("text", {"x": f"{outer_x + outer_w / 2:.2f}", "y": f"{dim_y - 9:.2f}", "text-anchor": "middle", "class": "dimension"}, f"OVERALL WIDTH  {total_width:.2f} m")
+        dim_x = outer_x - 54
+        for y in (outer_y, outer_y + outer_h):
+            element("line", {"x1": f"{outer_x - 8:.2f}", "y1": f"{y:.2f}", "x2": f"{dim_x + 8:.2f}", "y2": f"{y:.2f}", "stroke": "#80948a", "stroke-width": "1"})
+        element("line", {"x1": f"{dim_x:.2f}", "y1": f"{outer_y:.2f}", "x2": f"{dim_x:.2f}", "y2": f"{outer_y + outer_h:.2f}", "stroke": "#61746a", "stroke-width": "1.2", "marker-start": "url(#arrow)", "marker-end": "url(#arrow)"})
+        element("text", {"x": f"{dim_x - 11:.2f}", "y": f"{outer_y + outer_h / 2:.2f}", "text-anchor": "middle", "transform": f"rotate(-90 {dim_x - 11:.2f} {outer_y + outer_h / 2:.2f})", "class": "dimension"}, f"OVERALL DEPTH  {total_height:.2f} m")
+
+        # Sheet furniture: north arrow, graphic scale and legend.
+        north_x, north_y = canvas_width - 110, 150
+        element("path", {"d": f"M {north_x:.2f} {north_y - 31:.2f} L {north_x - 13:.2f} {north_y + 14:.2f} L {north_x:.2f} {north_y + 7:.2f} L {north_x + 13:.2f} {north_y + 14:.2f} Z", "fill": "#1c4b39"})
+        element("text", {"x": f"{north_x:.2f}", "y": f"{north_y + 34:.2f}", "text-anchor": "middle", "class": "dimension"}, "NORTH")
+        scale_metres = min(5.0, max(1.0, math.floor(total_width / 2)))
+        scale_pixels = scale_metres * scale
+        scale_x, scale_y = 70.0, canvas_height - 92.0
+        element("rect", {"x": f"{scale_x:.2f}", "y": f"{scale_y:.2f}", "width": f"{scale_pixels / 2:.2f}", "height": "10", "fill": "#1d4033"})
+        element("rect", {"x": f"{scale_x + scale_pixels / 2:.2f}", "y": f"{scale_y:.2f}", "width": f"{scale_pixels / 2:.2f}", "height": "10", "fill": "#f5f8f5", "stroke": "#1d4033"})
+        element("text", {"x": f"{scale_x:.2f}", "y": f"{scale_y + 26:.2f}", "class": "dimension"}, "0")
+        element("text", {"x": f"{scale_x + scale_pixels:.2f}", "y": f"{scale_y + 26:.2f}", "text-anchor": "end", "class": "dimension"}, f"{scale_metres:.0f} m")
+        element("text", {"x": "300", "y": str(canvas_height - 87), "class": "note"}, "LEGEND  ·  BLUE = CONCEPT GLAZING   BROWN = SYMBOLIC DOOR   GREY = FURNITURE")
+        element("rect", {"x": "56", "y": str(canvas_height - 64), "width": str(canvas_width - 112), "height": "28", "rx": "8", "fill": "#edf4ef"})
+        element("text", {"x": "70", "y": str(canvas_height - 46), "class": "note"}, "CONCEPT DESIGN STUDY ONLY — VERIFY ALL DIMENSIONS, WALLS, OPENINGS, SITE CONDITIONS, STRUCTURE AND SERVICES WITH QUALIFIED PROFESSIONALS.")
         parts.append("</svg>")
         return "\n".join(parts)
+
+    @staticmethod
+    def _append_concept_furniture(element: Any, room_type: str, x: float, y: float, width: float, height: float) -> None:
+        """Draw light schematic furniture cues without presenting a fit-out plan."""
+        prefix = room_type.split("_", 1)[0]
+        if width < 70 or height < 52:
+            return
+        if prefix == "living":
+            element("rect", {"x": f"{x + width * .30:.2f}", "y": f"{y + height * .68:.2f}", "width": f"{width * .40:.2f}", "height": f"{height * .13:.2f}", "rx": "5", "class": "furniture"})
+            element("circle", {"cx": f"{x + width * .50:.2f}", "cy": f"{y + height * .43:.2f}", "r": f"{min(width, height) * .09:.2f}", "class": "furniture"})
+        elif prefix == "bedroom":
+            element("rect", {"x": f"{x + width * .27:.2f}", "y": f"{y + height * .28:.2f}", "width": f"{width * .46:.2f}", "height": f"{height * .38:.2f}", "rx": "4", "class": "furniture"})
+            element("line", {"x1": f"{x + width * .30:.2f}", "y1": f"{y + height * .40:.2f}", "x2": f"{x + width * .70:.2f}", "y2": f"{y + height * .40:.2f}", "class": "furniture"})
+        elif prefix in {"kitchen", "dining"}:
+            element("rect", {"x": f"{x + width * .22:.2f}", "y": f"{y + height * .30:.2f}", "width": f"{width * .56:.2f}", "height": f"{height * .22:.2f}", "rx": "3", "class": "furniture"})
+        elif prefix in {"bathroom", "ensuite", "wc"}:
+            element("rect", {"x": f"{x + width * .30:.2f}", "y": f"{y + height * .32:.2f}", "width": f"{width * .36:.2f}", "height": f"{height * .25:.2f}", "rx": "6", "class": "furniture"})
 
     def layout_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Return concept room geometry for the active Design Studio floor.

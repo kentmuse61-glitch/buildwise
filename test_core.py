@@ -4,6 +4,7 @@ import struct
 import tempfile
 import unittest
 from datetime import date
+from xml.etree import ElementTree
 
 from backend.compliance import ComplianceChecker
 from backend.contractors import ContractorMatcher
@@ -41,6 +42,13 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertIn("Kumasi &amp; Ghana", svg)
         self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
         self.assertTrue(svg.rstrip().endswith("</svg>"))
+        ElementTree.fromstring(svg)
+        self.assertIn("OVERALL WIDTH", svg)
+        self.assertIn("OVERALL DEPTH", svg)
+        self.assertIn("NORTH", svg)
+        self.assertIn('class="outer-wall"', svg)
+        self.assertIn('class="door"', svg)
+        self.assertIn('class="window"', svg)
 
     def test_ghana_focused_residential_template_is_explicitly_opt_in(self):
         generator = PlanGenerator()
@@ -99,9 +107,16 @@ class ConstructionCoreTests(unittest.TestCase):
             self.assertEqual(json_type, 0x4E4F534A)
             document = json.loads(data[20:20 + json_length].decode("utf-8"))
             self.assertEqual(document["asset"]["version"], "2.0")
-            self.assertEqual(len(document["nodes"]), 2)
-            self.assertEqual(document["nodes"][0]["name"], "Floor 1 concept massing")
-            self.assertEqual(document["nodes"][1]["name"], "Floor 2 concept massing")
+            self.assertGreater(len(document["nodes"]), 12)
+            node_names = [node["name"] for node in document["nodes"]]
+            self.assertIn("Floor 1 concept massing", node_names)
+            self.assertIn("Floor 2 concept massing", node_names)
+            self.assertIn("Recessed front entry", node_names)
+            self.assertIn("Floor 1 front glazing panel 1", node_names)
+            self.assertIn("Floor 1 east glazing panel 1", node_names)
+            self.assertIn("Roof overhang", node_names)
+            self.assertGreaterEqual(len(document["materials"]), 6)
+            self.assertIn("Blue-grey glazing", [material["name"] for material in document["materials"]])
             self.assertEqual(document["asset"]["extras"]["buildwise"]["modelPurpose"], "early-planning concept massing only")
             self.assertTrue(all("target" in buffer_view for buffer_view in document["bufferViews"]))
             for mesh in document["meshes"]:

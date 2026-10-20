@@ -104,14 +104,14 @@ Interactive API docs: `/docs`.
 
 ## Tests
 
-Install the development test client, then run the unit and authenticated API integration suite:
+Install the development test client, then run the unit and API integration suite:
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m unittest discover -s tests -v
+python -m unittest -v test_core.py test_api.py
 ```
 
-The integration tests cover registration/login, named project creation, per-user ownership, CSV export and deletion.
+The suite covers the public, time-limited concept flow; modern SVG and GLB artifact structure; and the retained private API ownership/export safeguards.
 
 ## Before production
 

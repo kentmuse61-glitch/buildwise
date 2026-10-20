@@ -61,11 +61,13 @@ class Model3DGenerator:
         return re.sub(r"[^A-Za-z0-9_-]", "", str(value))[:48] or "project"
 
     def _build_glb(self, spec: dict[str, Any], filepath: Path) -> None:
-        """Build one correctly oriented closed box for every requested floor.
+        """Build a layered modern-tropical concept massing scene.
 
-        Each floor is a separate named mesh/node in the resulting GLB. Keeping
-        the floors distinct makes level changes legible in standard GLB viewers
-        while retaining a compact and robust concept-massing representation.
+        Each requested level retains its own robust, closed floor-box mesh. A
+        small set of additional typed-box components adds legible plinth, facade
+        bands, glazing, entrance, roof/parapet and optional balcony cues. These
+        are visual design-study components, not a construction model or a wall,
+        window, structural or quantity schedule.
         """
         floors = self._number_as_int(spec.get("floors"), default=1, minimum=1, maximum=self._MAX_FLOORS)
         area = self._number_as_float(
@@ -76,26 +78,125 @@ class Model3DGenerator:
         width = self._positive_sqrt(footprint_area * 1.25)
         depth = footprint_area / width
         half_width, half_depth = width / 2.0, depth / 2.0
+        total_height = floors * floor_height
+        materials = self._modern_materials()
+        meshes: list[dict[str, Any]] = []
 
-        floor_meshes: list[dict[str, Any]] = []
+        def add_box(name: str, material: int, x1: float, y1: float, z1: float, x2: float, y2: float, z2: float) -> None:
+            positions, normals, indices = self._box_geometry(x1, y1, z1, x2, y2, z2)
+            meshes.append({"name": name, "material": material, "positions": positions, "normals": normals, "indices": indices})
+
+        # Ground and plinth establish a deliberate base for the concept scene.
+        add_box("Landscaped concept plinth", 5, -half_width - 1.0, -0.16, -half_depth - 1.0, half_width + 1.0, -0.02, half_depth + 1.0)
+        add_box("Raised entry plinth", 1, -half_width - 0.22, -0.02, -half_depth - 0.22, half_width + 0.22, 0.22, half_depth + 0.22)
+
+        window_depth = 0.10
+        facade_z = -half_depth - window_depth / 2 - 0.012
+        rear_facade_z = half_depth + window_depth / 2 + 0.012
         for floor_index in range(floors):
-            base = floor_index * floor_height
-            positions, normals, indices = self._box_geometry(
-                -half_width,
-                base,
-                -half_depth,
-                half_width,
-                base + floor_height,
-                half_depth,
-            )
-            floor_meshes.append({
+            base = floor_index * floor_height + 0.22
+            top = base + floor_height
+            positions, normals, indices = self._box_geometry(-half_width, base, -half_depth, half_width, top, half_depth)
+            meshes.append({
                 "name": f"Floor {floor_index + 1} concept massing",
+                "material": 0,
                 "positions": positions,
                 "normals": normals,
                 "indices": indices,
             })
+            # Horizontal shadow band distinguishes the storeys in standard GLB viewers.
+            add_box(f"Floor {floor_index + 1} shadow band", 2, -half_width - 0.05, base - 0.08, -half_depth - 0.06, half_width + 0.05, base + 0.08, half_depth + 0.06)
 
-        self._write_bytes(filepath, self._build_glb_bytes(floor_meshes))
+            # Glazing on both longitudinal faces makes the facade cue legible
+            # from the default viewer camera as well as during user orbiting.
+            window_y = base + floor_height * 0.46
+            window_h = min(1.45, floor_height * 0.44)
+            window_w = min(max(0.9, width * 0.18), 2.1)
+            for face_name, face_z in (("front", facade_z), ("rear", rear_facade_z)):
+                for panel_index, centre_x in enumerate((-width * 0.27, 0.0, width * 0.27), start=1):
+                    add_box(
+                        f"Floor {floor_index + 1} {face_name} glazing panel {panel_index}",
+                        3,
+                        centre_x - window_w / 2,
+                        window_y - window_h / 2,
+                        face_z - window_depth / 2,
+                        centre_x + window_w / 2,
+                        window_y + window_h / 2,
+                        face_z + window_depth / 2,
+                    )
+            # Side glazing ensures the model remains expressive from all orbit angles.
+            side_window_span = min(max(0.9, depth * 0.20), 1.8)
+            for face_name, face_x in (("west", -half_width - window_depth / 2 - 0.012), ("east", half_width + window_depth / 2 + 0.012)):
+                for panel_index, centre_z in enumerate((-depth * 0.24, depth * 0.24), start=1):
+                    add_box(
+                        f"Floor {floor_index + 1} {face_name} glazing panel {panel_index}",
+                        3,
+                        face_x - window_depth / 2,
+                        window_y - window_h / 2,
+                        centre_z - side_window_span / 2,
+                        face_x + window_depth / 2,
+                        window_y + window_h / 2,
+                        centre_z + side_window_span / 2,
+                    )
+            # Vertical timber/terracotta screens articulate both long facades.
+            accent_w = min(0.7, width * 0.10)
+            for face_name, face_z, x1, x2 in (
+                ("front", facade_z, half_width - accent_w, half_width - 0.04),
+                ("rear", rear_facade_z, -half_width + 0.04, -half_width + accent_w),
+            ):
+                add_box(
+                    f"Floor {floor_index + 1} {face_name} facade screen",
+                    4,
+                    x1,
+                    base + 0.20,
+                    face_z - 0.05,
+                    x2,
+                    top - 0.14,
+                    face_z + 0.05,
+                )
+
+        # A protected front entry provides human scale on the ground level.
+        door_w = min(1.35, width * 0.18)
+        door_h = min(2.45, floor_height * 0.72)
+        add_box("Recessed front entry", 4, -door_w / 2, 0.23, facade_z - 0.08, door_w / 2, 0.23 + door_h, facade_z + 0.05)
+        canopy_depth = min(1.15, depth * 0.18)
+        add_box("Entry canopy", 2, -width * 0.22, floor_height * 0.78, -half_depth - canopy_depth, width * 0.22, floor_height * 0.92, -half_depth + 0.10)
+
+        features = {str(item).lower() for item in spec.get("special_features", []) if isinstance(item, str)}
+        if floors > 1 or "balcony" in features:
+            balcony_level = min(total_height - floor_height + floor_height * 0.12, total_height - 0.35) + 0.22
+            balcony_depth = min(1.35, depth * 0.22)
+            rail_y1, rail_y2 = balcony_level + 0.16, balcony_level + 0.86
+            for face_name, face_z, slab_z1, slab_z2, rail_z1, rail_z2 in (
+                ("Front", facade_z, -half_depth - balcony_depth, -half_depth + 0.03, -half_depth - balcony_depth - 0.025, -half_depth - balcony_depth + 0.035),
+                ("Rear", rear_facade_z, half_depth - 0.03, half_depth + balcony_depth, half_depth + balcony_depth - 0.035, half_depth + balcony_depth + 0.025),
+            ):
+                add_box(f"{face_name} balcony slab", 1, -width * 0.30, balcony_level, slab_z1, width * 0.30, balcony_level + 0.16, slab_z2)
+                add_box(f"{face_name} balcony glass rail", 3, -width * 0.30, rail_y1, rail_z1, width * 0.30, rail_y2, rail_z2)
+
+        # Flat roof, overhang and parapet give a clear, climate-responsive silhouette.
+        roof_base = total_height + 0.22
+        add_box("Roof overhang", 2, -half_width - 0.28, roof_base, -half_depth - 0.28, half_width + 0.28, roof_base + 0.18, half_depth + 0.28)
+        parapet_h = 0.46
+        parapet_t = 0.16
+        add_box("Front roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.28, half_width + 0.28, roof_base + 0.18 + parapet_h, -half_depth - 0.28 + parapet_t)
+        add_box("Rear roof parapet", 2, -half_width - 0.28, roof_base + 0.18, half_depth + 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.28)
+        add_box("West roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.12, -half_width - 0.12, roof_base + 0.18 + parapet_h, half_depth + 0.12)
+        add_box("East roof parapet", 2, half_width + 0.12, roof_base + 0.18, -half_depth - 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.12)
+
+        self._write_bytes(filepath, self._build_glb_bytes(meshes, materials))
+
+    @staticmethod
+    def _modern_materials() -> list[dict[str, Any]]:
+        """Return restrained concept-only facade materials, without texture assets."""
+        return [
+            {"name": "Warm render", "baseColorFactor": [0.83, 0.84, 0.79, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
+            {"name": "Sandstone plinth", "baseColorFactor": [0.52, 0.47, 0.40, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.96},
+            {"name": "Charcoal trim", "baseColorFactor": [0.09, 0.14, 0.13, 1.0], "metallicFactor": 0.08, "roughnessFactor": 0.56},
+            {"name": "Blue-grey glazing", "baseColorFactor": [0.06, 0.30, 0.40, 1.0], "metallicFactor": 0.16, "roughnessFactor": 0.22},
+            {"name": "Timber accent", "baseColorFactor": [0.45, 0.23, 0.12, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.72},
+            {"name": "Landscape base", "baseColorFactor": [0.31, 0.47, 0.31, 1.0], "metallicFactor": 0.0, "roughnessFactor": 1.0},
+        ]
 
     @staticmethod
     def _box_geometry(
@@ -135,11 +236,12 @@ class Model3DGenerator:
             raise ValueError("Box geometry has an unexpected shape")
         return positions, normals, indices
 
-    def _build_glb_bytes(self, floor_meshes: list[dict[str, Any]]) -> bytes:
+    def _build_glb_bytes(self, floor_meshes: list[dict[str, Any]], materials: list[dict[str, Any]] | None = None) -> bytes:
         """Serialize typed geometry arrays to a complete, aligned GLB 2.0 file."""
         if not floor_meshes:
             raise ValueError("At least one floor mesh is required")
 
+        materials = materials or self._modern_materials()
         binary = bytearray()
         buffer_views: list[dict[str, int]] = []
         accessors: list[dict[str, Any]] = []
@@ -182,12 +284,15 @@ class Model3DGenerator:
             index_accessor = len(accessors)
             accessors.append({"bufferView": index_view, "componentType": 5125, "count": len(indices), "type": "SCALAR"})
             name = str(floor.get("name") or f"Floor {floor_index + 1} concept massing")
+            material_index = int(floor.get("material", 0))
+            if not 0 <= material_index < len(materials):
+                raise ValueError("Mesh references an unknown concept material")
             meshes.append({
                 "name": name,
                 "primitives": [{
                     "attributes": {"POSITION": position_accessor, "NORMAL": normal_accessor},
                     "indices": index_accessor,
-                    "material": 0,
+                    "material": material_index,
                     "mode": 4,
                 }],
             })
@@ -210,13 +315,14 @@ class Model3DGenerator:
             "nodes": nodes,
             "meshes": meshes,
             "materials": [{
-                "name": "ConceptMassingMaterial",
+                "name": str(material["name"]),
                 "pbrMetallicRoughness": {
-                    "baseColorFactor": [0.72, 0.79, 0.70, 1.0],
-                    "metallicFactor": 0.0,
-                    "roughnessFactor": 0.82,
+                    "baseColorFactor": material["baseColorFactor"],
+                    "metallicFactor": material["metallicFactor"],
+                    "roughnessFactor": material["roughnessFactor"],
                 },
-            }],
+                **({"alphaMode": "BLEND", "doubleSided": True} if material["baseColorFactor"][3] < 1.0 else {}),
+            } for material in materials],
             "accessors": accessors,
             "bufferViews": buffer_views,
             "buffers": [{"byteLength": len(binary)}],

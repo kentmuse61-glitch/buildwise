@@ -192,9 +192,9 @@ a { color: inherit; }
 .detail-cost small { color: #97a39c; font-size: 9px; }
 .detail-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: 14px; align-items: start; }
 .detail-column { display: grid; gap: 14px; min-width: 0; }
-.model-stage { display: flex; align-items: center; justify-content: center; min-height: 250px; overflow: hidden; border-radius: 10px; background: radial-gradient(circle at 50% 41%, #f7faf5, #edf3ed); }
-.model-stage model-viewer { display: block; width: 100%; height: 278px; --poster-color: transparent; --progress-bar-color: #2b6549; background: transparent; }
-.model-stage canvas { display: block; width: 100%; height: 255px; cursor: grab; touch-action: none; }
+.model-stage { position: relative; display: block; height: 278px; min-height: 278px; overflow: hidden; border-radius: 10px; background: radial-gradient(circle at 50% 41%, #f7faf5, #edf3ed); }
+.model-stage model-viewer { position: absolute; inset: 0; display: block; width: 100%; min-width: 0; max-width: none; height: 100%; --poster-color: transparent; --progress-bar-color: #2b6549; background: transparent; }
+.model-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .model-stage canvas:active { cursor: grabbing; }
 .model-caption { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; color: #94a099; font-size: 9px; }
 .plan-stage { display: flex; align-items: center; justify-content: center; min-height: 265px; overflow: auto; padding: 8px; border-radius: 10px; background: #f7f9f6; }
