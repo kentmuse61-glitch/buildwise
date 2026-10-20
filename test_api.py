@@ -223,6 +223,17 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(second_plan.status_code, 200, second_plan.text)
         self.assertIn("Level two studio", second_plan.text)
 
+    def test_public_generation_accepts_a_brief_longer_than_1500_words(self):
+        detail = "planning " * 1_520
+        description = f"A 3-storey apartment in Kumasi with 540 sqm and 6 bedrooms. {detail} Solar power is required."
+        self.assertGreater(len(description.split()), 1_500)
+        response = self.client.post("/api/public/project/generate", json={"description": description, "location": "Kumasi"})
+        self.assertEqual(response.status_code, 200, response.text)
+        concept = response.json()
+        self.assertEqual(concept["description"], description)
+        self.assertIn("Solar power is required.", concept["spec"]["raw_text"])
+        self.assertIn("solar_power", concept["spec"]["special_features"])
+
     def test_market_direction_endpoint_is_bounded_and_non_persistent(self):
         response = self.client.post("/api/v2/generate/market-variants", json={
             "description": "A two-storey, 3-bedroom family home in Kumasi with solar power and a balcony.",

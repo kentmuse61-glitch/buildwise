@@ -28,6 +28,15 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertEqual(spec["budget_constraint"], 800000)
         self.assertIn("solar_power", spec["special_features"])
 
+    def test_parser_retains_a_brief_longer_than_1500_words(self):
+        detail = "context " * 1_520
+        source = f"A 3-storey apartment in Kumasi with 540 sqm, 6 bedrooms and 6 bathrooms. {detail} Solar power and a balcony are required."
+        self.assertGreater(len(source.split()), 1_500)
+        spec = parse_construction_request(source)
+        self.assertIn("Solar power and a balcony are required.", spec["raw_text"])
+        self.assertIn("solar_power", spec["special_features"])
+        self.assertIn("balcony", spec["special_features"])
+
     def test_plan_svg_is_well_formed_and_escapes_user_text(self):
         generator = PlanGenerator()
         svg = generator.build_svg({

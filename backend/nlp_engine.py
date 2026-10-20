@@ -69,7 +69,9 @@ def _parse_budget(text: str) -> float | None:
 
 def parse_construction_request(text: str) -> dict[str, Any]:
     """Parse a short natural-language brief into a conservative concept spec."""
-    clean_text = " ".join((text or "").split())[:4000]
+    # Retain enough normalized source text for briefs longer than 1,500 words
+    # while keeping anonymous API and artifact processing bounded.
+    clean_text = " ".join((text or "").split())[:20_000]
     lowered = clean_text.lower()
 
     spec: dict[str, Any] = {

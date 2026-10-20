@@ -183,7 +183,7 @@ function createMarkup() {
       <section class="panel">
         <div class="panel-heading"><div><h3>Project brief</h3><p>More detail helps the concept match your intent.</p></div><span class="meta-pill">Ghana · GHS</span></div>
         <form id="create-form" class="creation-form">
-          <label class="form-field"><span>What are you planning?</span><textarea id="project-description" required minlength="10" maxlength="4000" placeholder="Example: A 3-bedroom, 2-bathroom bungalow in Kumasi, about 150 sqm total floor area, cement blocks, metal roof, with a porch and solar power."></textarea><small class="form-hint">Tip: State the total floor area (all floors combined) in m² if you know it. This tool creates a concept, not permit-ready drawings.</small></label>
+          <label class="form-field"><span>What are you planning?</span><textarea id="project-description" required minlength="10" maxlength="20000" placeholder="Example: A 3-bedroom, 2-bathroom bungalow in Kumasi, about 150 sqm total floor area, cement blocks, metal roof, with a porch and solar power."></textarea><small class="form-hint">Long briefs are supported: up to 20,000 characters (typically more than 1,500 words). State total floor area across all levels if you know it. This tool creates a concept, not permit-ready drawings.</small><small id="project-description-counter" class="form-hint">0 words · 0 / 20,000 characters</small></label>
           <label class="form-field"><span>Project name <small>Optional</small></span><input id="project-name" type="text" maxlength="120" placeholder="e.g. Adum Family Home"></label>
           <div class="input-grid">
             <label class="form-field"><span>Project location</span><select id="project-location">${locations.map((location, index) => `<option value="${index === 0 ? "auto" : escapeHtml(location)}" ${index === 0 ? "selected" : ""}>${escapeHtml(location)}</option>`).join("")}</select><small class="form-hint">Choose a city or use the location mentioned in your brief.</small></label>
@@ -203,6 +203,16 @@ function createMarkup() {
 function initCreateForm() {
   const form = $("#create-form");
   if (!form) return;
+  const descriptionInput = $("#project-description");
+  const descriptionCounter = $("#project-description-counter");
+  const updateDescriptionCounter = () => {
+    if (!descriptionInput || !descriptionCounter) return;
+    const text = descriptionInput.value.trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    descriptionCounter.textContent = `${words.toLocaleString("en-GH")} words · ${descriptionInput.value.length.toLocaleString("en-GH")} / 20,000 characters`;
+  };
+  descriptionInput?.addEventListener("input", updateDescriptionCounter);
+  updateDescriptionCounter();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const description = $("#project-description").value.trim();
