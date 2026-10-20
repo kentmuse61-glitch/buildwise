@@ -1,8 +1,7 @@
-"""Generate safe, lightweight GLB concept massing models.
+"""Generate robust glTF 2.0 binary (GLB) concept massing models.
 
-The primary generator builds a small scene graph of watertight conceptual
-building components. It is intentionally a visual planning model only: it is
-not an architectural, engineering, construction, or permit model.
+The generated files are lightweight visual planning models only. They are not
+architectural, structural, engineering, construction, or permit models.
 """
 
 from __future__ import annotations
@@ -15,172 +14,219 @@ import struct
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
 class Model3DGenerator:
-    """Generate a conceptual GLB with a robust solid-geometry pipeline.
+    """Generate a valid GLB containing one closed box mass per concept floor."""
 
-    ``manifold3d`` produces watertight solid components and ``trimesh``
-    serializes the scene to standard GLB. Imports are kept inside generation
-    so a broken optional runtime still returns the small standards-compliant
-    fallback instead of preventing the API from starting.
-    """
-
-    _WALL_THICKNESS_M = 0.22
-    _COMPONENT_COLORS = {
-        "front_wall": (183, 197, 178, 255),
-        "rear_wall": (174, 188, 169, 255),
-        "side_wall": (164, 178, 160, 255),
-        "slab": (100, 108, 100, 255),
-        "roof": (70, 82, 71, 255),
-        "balcony": (128, 139, 126, 255),
-    }
+    _MAX_FLOORS = 50
+    _MIN_AREA_SQM = 20.0
+    _MAX_AREA_SQM = 1_000_000.0
 
     def __init__(self, output_dir: str = "output") -> None:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
     def generate_model(self, spec: dict[str, Any], project_id: str | int) -> str:
-        """Write a GLB model, using a cube fallback if primary generation fails."""
+        """Write a concept GLB and return a valid fallback on generation failure."""
         safe_id = self._safe_id(project_id)
-        filepath = os.path.join(self.output_dir, f"model_{safe_id}.glb")
+        filepath = Path(self.output_dir) / f"model_{safe_id}.glb"
         try:
             self._build_glb(spec, filepath)
-            return filepath
-        except (ImportError, OSError, TypeError, ValueError, ArithmeticError, struct.error) as error:
+            return str(filepath)
+        except (OSError, TypeError, ValueError, ArithmeticError, OverflowError, struct.error) as error:
             logger.exception("3D model generation failed for project %s: %s", safe_id, error)
             return self._generate_fallback_model(safe_id)
 
     def _generate_fallback_model(self, project_id: str | int) -> str:
-        """Write a valid one-storey cube when richer geometry is unavailable."""
-        filepath = os.path.join(self.output_dir, f"model_{self._safe_id(project_id)}_fallback.glb")
-        positions: list[tuple[float, float, float]] = []
-        normals: list[tuple[float, float, float]] = []
-        indices: list[int] = []
-        self._append_box(positions, normals, indices, -1.0, 0.0, -1.0, 1.0, 2.5, 1.0)
-        self._write_glb_file(filepath, positions, normals, indices, "FallbackConceptBuilding")
-        return filepath
+        """Write a small, valid one-storey fallback massing GLB."""
+        filepath = Path(self.output_dir) / f"model_{self._safe_id(project_id)}_fallback.glb"
+        positions, normals, indices = self._box_geometry(-1.0, 0.0, -1.0, 1.0, 2.8, 1.0)
+        payload = self._build_glb_bytes([
+            {
+                "name": "Fallback concept massing",
+                "positions": positions,
+                "normals": normals,
+                "indices": indices,
+            }
+        ])
+        self._write_bytes(filepath, payload)
+        return str(filepath)
 
     @staticmethod
     def _safe_id(value: str | int) -> str:
         return re.sub(r"[^A-Za-z0-9_-]", "", str(value))[:48] or "project"
 
-    def _build_glb(self, spec: dict[str, Any], filepath: str) -> None:
-        """Build a small visual massing scene with door/window recesses.
+    def _build_glb(self, spec: dict[str, Any], filepath: Path) -> None:
+        """Build one correctly oriented closed box for every requested floor.
 
-        Geometry comes only from normalized concept inputs. It is deliberately
-        not derived from surveys, structural calculations, or regulatory data.
+        Each floor is a separate named mesh/node in the resulting GLB. Keeping
+        the floors distinct makes level changes legible in standard GLB viewers
+        while retaining a compact and robust concept-massing representation.
         """
-        import manifold3d as manifold
-        import numpy as np
-        import trimesh
-
-        floors = self._number_as_int(spec.get("floors"), default=1, minimum=1, maximum=50)
-        area = self._number_as_float(spec.get("area_sqm"), default=100.0, minimum=20.0, maximum=1_000_000.0)
-        ceiling_height = self._number_as_float(spec.get("ceiling_height"), default=3.2, minimum=2.5, maximum=6.0)
+        floors = self._number_as_int(spec.get("floors"), default=1, minimum=1, maximum=self._MAX_FLOORS)
+        area = self._number_as_float(
+            spec.get("area_sqm"), default=100.0, minimum=self._MIN_AREA_SQM, maximum=self._MAX_AREA_SQM
+        )
+        floor_height = self._number_as_float(spec.get("ceiling_height"), default=3.2, minimum=2.5, maximum=6.0)
         footprint_area = area / floors
-        width = math_sqrt(footprint_area * 1.25)
+        width = self._positive_sqrt(footprint_area * 1.25)
         depth = footprint_area / width
-        if width <= self._WALL_THICKNESS_M * 3 or depth <= self._WALL_THICKNESS_M * 3:
-            raise ValueError("Concept footprint is too small for a 3D shell")
+        half_width, half_depth = width / 2.0, depth / 2.0
 
-        scene = trimesh.Scene()
-        scene.metadata.update({
-            "generator": "Buildwise GH",
-            "model_purpose": "early-planning concept massing only",
-            "not_for_construction_or_permit": True,
-            "units": "metres",
-        })
-        half_width, half_depth = width / 2, depth / 2
-        wall = self._WALL_THICKNESS_M
+        floor_meshes: list[dict[str, Any]] = []
+        for floor_index in range(floors):
+            base = floor_index * floor_height
+            positions, normals, indices = self._box_geometry(
+                -half_width,
+                base,
+                -half_depth,
+                half_width,
+                base + floor_height,
+                half_depth,
+            )
+            floor_meshes.append({
+                "name": f"Floor {floor_index + 1} concept massing",
+                "positions": positions,
+                "normals": normals,
+                "indices": indices,
+            })
 
-        # A ground slab and a roof cap help the viewer read this as a building
-        # while each level remains independently identifiable in the GLB scene.
-        foundation = manifold.Manifold.cube((width + wall, 0.22, depth + wall), center=True).translate((0, -0.11, 0))
-        self._append_scene_component(scene, foundation, "foundation_slab_concept", "slab", np, trimesh)
-
-        for floor in range(floors):
-            base = floor * ceiling_height
-            floor_number = floor + 1
-            front_wall = manifold.Manifold.cube((width, ceiling_height, wall), center=True).translate((0, base + ceiling_height / 2, half_depth - wall / 2))
-            rear_wall = manifold.Manifold.cube((width, ceiling_height, wall), center=True).translate((0, base + ceiling_height / 2, -half_depth + wall / 2))
-            west_wall = manifold.Manifold.cube((wall, ceiling_height, depth - 2 * wall), center=True).translate((-half_width + wall / 2, base + ceiling_height / 2, 0))
-            east_wall = manifold.Manifold.cube((wall, ceiling_height, depth - 2 * wall), center=True).translate((half_width - wall / 2, base + ceiling_height / 2, 0))
-
-            front_wall = self._cut_front_openings(front_wall, floor, width, depth, base, ceiling_height, manifold)
-            rear_wall = self._cut_rear_openings(rear_wall, width, depth, base, ceiling_height, manifold)
-            self._append_scene_component(scene, front_wall, f"floor_{floor_number}_front_wall_concept", "front_wall", np, trimesh)
-            self._append_scene_component(scene, rear_wall, f"floor_{floor_number}_rear_wall_concept", "rear_wall", np, trimesh)
-            self._append_scene_component(scene, west_wall, f"floor_{floor_number}_west_wall_concept", "side_wall", np, trimesh)
-            self._append_scene_component(scene, east_wall, f"floor_{floor_number}_east_wall_concept", "side_wall", np, trimesh)
-
-            if floor < floors - 1:
-                slab = manifold.Manifold.cube((width, 0.18, depth), center=True).translate((0, base + ceiling_height, 0))
-                self._append_scene_component(scene, slab, f"floor_{floor_number}_ceiling_slab_concept", "slab", np, trimesh)
-
-        roof_base = floors * ceiling_height
-        roof = manifold.Manifold.cube((width + 0.40, 0.26, depth + 0.40), center=True).translate((0, roof_base + 0.13, 0))
-        self._append_scene_component(scene, roof, "roof_slab_concept", "roof", np, trimesh)
-        if self._has_balcony(spec):
-            balcony = manifold.Manifold.cube((max(width * 0.35, 1.6), 0.18, 1.25), center=True).translate((0, roof_base - ceiling_height + 0.10, half_depth + 0.52))
-            self._append_scene_component(scene, balcony, "front_balcony_concept", "balcony", np, trimesh)
-
-        if not scene.geometry:
-            raise ValueError("No concept geometry was generated")
-        glb = scene.export(file_type="glb")
-        if not isinstance(glb, bytes) or len(glb) < 20:
-            raise ValueError("GLB serialization returned no usable model")
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        Path(filepath).write_bytes(self._finalize_concept_glb(glb))
+        self._write_bytes(filepath, self._build_glb_bytes(floor_meshes))
 
     @staticmethod
-    def _finalize_concept_glb(glb: bytes) -> bytes:
-        """Add portable buffer targets and immutable concept-model metadata.
+    def _box_geometry(
+        x1: float,
+        y1: float,
+        z1: float,
+        x2: float,
+        y2: float,
+        z2: float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return properly wound, per-face box position, normal, and index arrays.
 
-        Trimesh deliberately omits optional WebGL buffer targets. They are
-        useful for validators and browsers, so add them to this internally
-        generated GLB without accepting or parsing any user-supplied model.
+        Vertices are deliberately not shared between faces so that each face has
+        a stable outward normal in GLB viewers. Arrays are explicitly typed for
+        predictable, portable binary serialization.
         """
-        if len(glb) < 20:
-            raise ValueError("GLB is incomplete")
-        magic, version, declared_length = struct.unpack("<4sII", glb[:12])
-        json_length, json_type = struct.unpack("<II", glb[12:20])
-        json_end = 20 + json_length
-        if magic != b"glTF" or version != 2 or declared_length != len(glb) or json_type != 0x4E4F534A or json_end + 8 > len(glb):
-            raise ValueError("GLB serialization is not valid glTF 2.0")
-        bin_length, bin_type = struct.unpack("<II", glb[json_end:json_end + 8])
-        bin_start = json_end + 8
-        bin_end = bin_start + bin_length
-        if bin_type != 0x004E4942 or bin_end != len(glb):
-            raise ValueError("GLB binary chunk is incomplete")
+        bounds = np.asarray((x1, y1, z1, x2, y2, z2), dtype=np.float64)
+        if not np.isfinite(bounds).all() or not (x2 > x1 and y2 > y1 and z2 > z1):
+            raise ValueError("Box bounds must be finite and have positive dimensions")
 
-        document = json.loads(glb[20:json_end].decode("utf-8"))
-        accessors = document.get("accessors", [])
-        buffer_views = document.get("bufferViews", [])
-        for mesh in document.get("meshes", []):
-            for primitive in mesh.get("primitives", []):
-                for accessor_index in primitive.get("attributes", {}).values():
-                    view_index = accessors[accessor_index].get("bufferView")
-                    if view_index is not None:
-                        buffer_views[view_index]["target"] = 34962  # ARRAY_BUFFER
-                index_accessor = primitive.get("indices")
-                if index_accessor is not None:
-                    view_index = accessors[index_accessor].get("bufferView")
-                    if view_index is not None:
-                        buffer_views[view_index]["target"] = 34963  # ELEMENT_ARRAY_BUFFER
-        asset = document.setdefault("asset", {})
-        extras = asset.setdefault("extras", {})
-        extras["buildwise"] = {
-            "modelPurpose": "early-planning concept massing only",
-            "notForConstructionOrPermit": True,
-            "units": "metres",
+        faces = (
+            # front, back, west, east, roof, base — winding points outwards
+            ([(x1, y1, z1), (x1, y2, z1), (x2, y2, z1), (x2, y1, z1)], (0.0, 0.0, -1.0)),
+            ([(x1, y1, z2), (x2, y1, z2), (x2, y2, z2), (x1, y2, z2)], (0.0, 0.0, 1.0)),
+            ([(x1, y1, z1), (x1, y1, z2), (x1, y2, z2), (x1, y2, z1)], (-1.0, 0.0, 0.0)),
+            ([(x2, y1, z1), (x2, y2, z1), (x2, y2, z2), (x2, y1, z2)], (1.0, 0.0, 0.0)),
+            ([(x1, y2, z1), (x1, y2, z2), (x2, y2, z2), (x2, y2, z1)], (0.0, 1.0, 0.0)),
+            ([(x1, y1, z1), (x2, y1, z1), (x2, y1, z2), (x1, y1, z2)], (0.0, -1.0, 0.0)),
+        )
+        positions = np.asarray([vertex for corners, _ in faces for vertex in corners], dtype=np.float32)
+        normals = np.asarray([normal for _, normal in faces for _ in range(4)], dtype=np.float32)
+        indices = np.asarray(
+            [index for face_index in range(6) for index in (face_index * 4, face_index * 4 + 1, face_index * 4 + 2, face_index * 4, face_index * 4 + 2, face_index * 4 + 3)],
+            dtype=np.uint32,
+        )
+        if positions.shape != (24, 3) or normals.shape != (24, 3) or indices.shape != (36,):
+            raise ValueError("Box geometry has an unexpected shape")
+        return positions, normals, indices
+
+    def _build_glb_bytes(self, floor_meshes: list[dict[str, Any]]) -> bytes:
+        """Serialize typed geometry arrays to a complete, aligned GLB 2.0 file."""
+        if not floor_meshes:
+            raise ValueError("At least one floor mesh is required")
+
+        binary = bytearray()
+        buffer_views: list[dict[str, int]] = []
+        accessors: list[dict[str, Any]] = []
+        meshes: list[dict[str, Any]] = []
+        nodes: list[dict[str, Any]] = []
+
+        def append_array(array: np.ndarray, target: int) -> int:
+            contiguous = np.ascontiguousarray(array)
+            if not np.isfinite(contiguous).all():
+                raise ValueError("Geometry contains non-finite values")
+            binary.extend(b"\x00" * ((-len(binary)) % 4))
+            offset = len(binary)
+            binary.extend(contiguous.tobytes(order="C"))
+            buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": contiguous.nbytes, "target": target})
+            return len(buffer_views) - 1
+
+        for floor_index, floor in enumerate(floor_meshes):
+            positions = np.asarray(floor["positions"], dtype=np.float32)
+            normals = np.asarray(floor["normals"], dtype=np.float32)
+            indices = np.asarray(floor["indices"], dtype=np.uint32)
+            if positions.ndim != 2 or positions.shape[1] != 3 or normals.shape != positions.shape or indices.ndim != 1:
+                raise ValueError("Geometry arrays have invalid dimensions")
+            if indices.size == 0 or int(indices.max()) >= len(positions):
+                raise ValueError("Geometry indices are outside the vertex range")
+
+            position_view = append_array(positions, 34962)  # ARRAY_BUFFER
+            normal_view = append_array(normals, 34962)  # ARRAY_BUFFER
+            index_view = append_array(indices, 34963)  # ELEMENT_ARRAY_BUFFER
+            position_accessor = len(accessors)
+            accessors.append({
+                "bufferView": position_view,
+                "componentType": 5126,
+                "count": len(positions),
+                "type": "VEC3",
+                "min": positions.min(axis=0).astype(float).tolist(),
+                "max": positions.max(axis=0).astype(float).tolist(),
+            })
+            normal_accessor = len(accessors)
+            accessors.append({"bufferView": normal_view, "componentType": 5126, "count": len(normals), "type": "VEC3"})
+            index_accessor = len(accessors)
+            accessors.append({"bufferView": index_view, "componentType": 5125, "count": len(indices), "type": "SCALAR"})
+            name = str(floor.get("name") or f"Floor {floor_index + 1} concept massing")
+            meshes.append({
+                "name": name,
+                "primitives": [{
+                    "attributes": {"POSITION": position_accessor, "NORMAL": normal_accessor},
+                    "indices": index_accessor,
+                    "material": 0,
+                    "mode": 4,
+                }],
+            })
+            nodes.append({"name": name, "mesh": floor_index})
+
+        document = {
+            "asset": {
+                "version": "2.0",
+                "generator": "Buildwise GH",
+                "extras": {
+                    "buildwise": {
+                        "modelPurpose": "early-planning concept massing only",
+                        "notForConstructionOrPermit": True,
+                        "units": "metres",
+                    }
+                },
+            },
+            "scene": 0,
+            "scenes": [{"name": "Buildwise concept massing", "nodes": list(range(len(nodes)))}],
+            "nodes": nodes,
+            "meshes": meshes,
+            "materials": [{
+                "name": "ConceptMassingMaterial",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.72, 0.79, 0.70, 1.0],
+                    "metallicFactor": 0.0,
+                    "roughnessFactor": 0.82,
+                },
+            }],
+            "accessors": accessors,
+            "bufferViews": buffer_views,
+            "buffers": [{"byteLength": len(binary)}],
         }
-
-        json_chunk = json.dumps(document, separators=(",", ":")).encode("utf-8")
+        json_chunk = json.dumps(document, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         json_chunk += b" " * ((-len(json_chunk)) % 4)
-        binary_chunk = glb[bin_start:bin_end]
+        binary_chunk = bytes(binary) + b"\x00" * ((-len(binary)) % 4)
         total_length = 12 + 8 + len(json_chunk) + 8 + len(binary_chunk)
+        if total_length > 0xFFFFFFFF:
+            raise ValueError("GLB exceeds the glTF 2.0 file-size limit")
         return (
             struct.pack("<4sII", b"glTF", 2, total_length)
             + struct.pack("<II", len(json_chunk), 0x4E4F534A)
@@ -189,155 +235,37 @@ class Model3DGenerator:
             + binary_chunk
         )
 
-    def _cut_front_openings(self, wall_solid: Any, floor: int, width: float, depth: float, base: float, height: float, manifold: Any) -> Any:
-        """Cut visual entry/window openings through the front facade component."""
-        cutter_depth = self._WALL_THICKNESS_M + 0.06
-        z = depth / 2 - self._WALL_THICKNESS_M / 2
-        if floor == 0:
-            door_width = min(1.20, width * 0.20)
-            door_height = min(2.20, height * 0.82)
-            door = manifold.Manifold.cube((door_width, door_height, cutter_depth), center=True).translate((0, base + door_height / 2, z))
-            wall_solid = wall_solid - door
-        window_width = min(1.55, width * 0.18)
-        window_height = min(1.20, height * 0.38)
-        sill = min(1.20, height - window_height - 0.25)
-        for x in (-width * 0.28, width * 0.28):
-            opening = manifold.Manifold.cube((window_width, window_height, cutter_depth), center=True).translate((x, base + sill + window_height / 2, z))
-            wall_solid = wall_solid - opening
-        return wall_solid
-
-    def _cut_rear_openings(self, wall_solid: Any, width: float, depth: float, base: float, height: float, manifold: Any) -> Any:
-        """Cut two modest concept windows through the rear facade component."""
-        cutter_depth = self._WALL_THICKNESS_M + 0.06
-        z = -depth / 2 + self._WALL_THICKNESS_M / 2
-        window_width = min(1.35, width * 0.16)
-        window_height = min(1.05, height * 0.34)
-        sill = min(1.25, height - window_height - 0.25)
-        for x in (-width * 0.25, width * 0.25):
-            opening = manifold.Manifold.cube((window_width, window_height, cutter_depth), center=True).translate((x, base + sill + window_height / 2, z))
-            wall_solid = wall_solid - opening
-        return wall_solid
-
-    def _append_scene_component(self, scene: Any, solid: Any, name: str, color_name: str, np: Any, trimesh: Any) -> None:
-        """Convert one manifold solid to a colored, named GLB scene component."""
-        mesh_data = solid.to_mesh()
-        vertices = np.asarray(mesh_data.vert_properties, dtype=np.float64)[:, :3]
-        faces = np.asarray(mesh_data.tri_verts, dtype=np.int64)
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False, validate=False)
-        if mesh.is_empty or not mesh.is_watertight or mesh.volume <= 0:
-            raise ValueError(f"Concept component {name!r} is not a closed solid")
-        color = np.asarray(self._COMPONENT_COLORS[color_name], dtype=np.uint8)
-        # Vertex colors preserve materials without an image/texture dependency.
-        mesh.visual.vertex_colors = np.tile(color, (len(mesh.vertices), 1))
-        scene.add_geometry(mesh, node_name=name, geom_name=name)
-
     @staticmethod
-    def _has_balcony(spec: dict[str, Any]) -> bool:
-        features = spec.get("special_features")
-        return isinstance(features, list) and any(str(feature).lower() == "balcony" for feature in features)
+    def _write_bytes(filepath: Path, payload: bytes) -> None:
+        """Atomically replace an artifact only after its full GLB is prepared."""
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = filepath.with_suffix(f"{filepath.suffix}.tmp")
+        try:
+            temporary_path.write_bytes(payload)
+            os.replace(temporary_path, filepath)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink(missing_ok=True)
 
     @staticmethod
     def _number_as_int(value: Any, default: int, minimum: int, maximum: int) -> int:
         try:
             return min(max(int(value), minimum), maximum)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
 
     @staticmethod
     def _number_as_float(value: Any, default: float, minimum: float, maximum: float) -> float:
         try:
             parsed = float(value)
-            if not parsed == parsed:  # NaN
+            if not np.isfinite(parsed):
                 return default
             return min(max(parsed, minimum), maximum)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
 
     @staticmethod
-    def _append_box(
-        positions: list[tuple[float, float, float]],
-        normals: list[tuple[float, float, float]],
-        indices: list[int],
-        x1: float,
-        y1: float,
-        z1: float,
-        x2: float,
-        y2: float,
-        z2: float,
-    ) -> None:
-        faces = [
-            ([(x1, y1, z1), (x1, y2, z1), (x2, y2, z1), (x2, y1, z1)], (0.0, 0.0, -1.0)),
-            ([(x1, y1, z2), (x2, y1, z2), (x2, y2, z2), (x1, y2, z2)], (0.0, 0.0, 1.0)),
-            ([(x1, y1, z1), (x1, y1, z2), (x1, y2, z2), (x1, y2, z1)], (-1.0, 0.0, 0.0)),
-            ([(x2, y1, z1), (x2, y2, z1), (x2, y2, z2), (x2, y1, z2)], (1.0, 0.0, 0.0)),
-            ([(x1, y2, z1), (x1, y2, z2), (x2, y2, z2), (x2, y2, z1)], (0.0, 1.0, 0.0)),
-            ([(x1, y1, z1), (x2, y1, z1), (x2, y1, z2), (x1, y1, z2)], (0.0, -1.0, 0.0)),
-        ]
-        for corners, normal in faces:
-            start = len(positions)
-            positions.extend(corners)
-            normals.extend([normal] * 4)
-            indices.extend((start, start + 1, start + 2, start, start + 2, start + 3))
-
-    def _write_glb_file(
-        self,
-        filepath: str,
-        positions: list[tuple[float, float, float]],
-        normals: list[tuple[float, float, float]],
-        indices: list[int],
-        model_name: str,
-    ) -> None:
-        """Write a standards-compliant fallback GLB with normals and a material."""
-        if len(positions) != len(normals) or not positions or not indices:
-            raise ValueError("GLB geometry is incomplete")
-        if len(positions) > 65535:
-            raise ValueError("Model exceeds supported vertex limit")
-
-        position_bytes = struct.pack("<" + "f" * (len(positions) * 3), *(value for point in positions for value in point))
-        normal_bytes = struct.pack("<" + "f" * (len(normals) * 3), *(value for normal in normals for value in normal))
-        index_bytes = struct.pack("<" + "H" * len(indices), *indices)
-        binary_raw = position_bytes + normal_bytes + index_bytes
-        min_position = [min(point[axis] for point in positions) for axis in range(3)]
-        max_position = [max(point[axis] for point in positions) for axis in range(3)]
-
-        gltf = {
-            "asset": {"version": "2.0", "generator": "Buildwise GH"},
-            "scene": 0,
-            "scenes": [{"nodes": [0]}],
-            "nodes": [{"mesh": 0, "name": model_name}],
-            "meshes": [{"name": model_name, "primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 2, "material": 0}]}],
-            "materials": [{
-                "name": "ConceptBuildingMaterial",
-                "pbrMetallicRoughness": {"baseColorFactor": [0.72, 0.79, 0.70, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.82},
-            }],
-            "accessors": [
-                {"bufferView": 0, "componentType": 5126, "count": len(positions), "type": "VEC3", "min": min_position, "max": max_position},
-                {"bufferView": 1, "componentType": 5126, "count": len(normals), "type": "VEC3"},
-                {"bufferView": 2, "componentType": 5123, "count": len(indices), "type": "SCALAR"},
-            ],
-            "bufferViews": [
-                {"buffer": 0, "byteOffset": 0, "byteLength": len(position_bytes), "target": 34962},
-                {"buffer": 0, "byteOffset": len(position_bytes), "byteLength": len(normal_bytes), "target": 34962},
-                {"buffer": 0, "byteOffset": len(position_bytes) + len(normal_bytes), "byteLength": len(index_bytes), "target": 34963},
-            ],
-            "buffers": [{"byteLength": len(binary_raw)}],
-        }
-        json_chunk = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
-        json_chunk += b" " * ((-len(json_chunk)) % 4)
-        binary_chunk = binary_raw + b"\x00" * ((-len(binary_raw)) % 4)
-        total_length = 12 + 8 + len(json_chunk) + 8 + len(binary_chunk)
-
-        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-        with open(filepath, "wb") as output:
-            output.write(struct.pack("<4sII", b"glTF", 2, total_length))
-            output.write(struct.pack("<II", len(json_chunk), 0x4E4F534A))
-            output.write(json_chunk)
-            output.write(struct.pack("<II", len(binary_chunk), 0x004E4942))
-            output.write(binary_chunk)
-
-
-def math_sqrt(value: float) -> float:
-    """Keep dimensions valid before they reach the geometry library."""
-    if value <= 0:
-        raise ValueError("Building footprint must be positive")
-    return value ** 0.5
+    def _positive_sqrt(value: float) -> float:
+        if not np.isfinite(value) or value <= 0:
+            raise ValueError("Building footprint must be positive")
+        return float(np.sqrt(value))

@@ -12,20 +12,12 @@ The distributed bundle retains its own source/license headers, including notices
 
 This library only displays a generated concept massing model. It does not make the model an architectural, structural, engineering, or permit drawing.
 
-## `manifold3d` 3.5.4
+## `numpy` 2.5.4
 
-Buildwise GH uses the Python bindings to Manifold only to create watertight visual solids for generated concept-massing GLB files.
+Buildwise GH uses NumPy arrays to keep generated GLB positions, normals, and indices explicitly typed and contiguous before binary serialization.
 
-- Upstream project: <https://github.com/elalish/manifold>
-- Package: `manifold3d` 3.5.4
-- Package license: Apache-2.0
+- Upstream project: <https://github.com/numpy/numpy>
+- Package: `numpy` 2.5.4
+- Package license: BSD-3-Clause
 
-## `trimesh` 5.1.1
-
-Buildwise GH uses Trimesh only to serialize the generated concept-solid scene as a standard GLB.
-
-- Upstream project: <https://github.com/mikedh/trimesh>
-- Package: `trimesh` 5.1.1
-- Package license: MIT
-
-These dependencies improve visual concept-model geometry and interchange only. They do not supply construction details, professional certification, code determinations, or permit readiness.
+This dependency improves generated concept-model geometry serialization only. It does not supply construction details, professional certification, code determinations, or permit readiness.

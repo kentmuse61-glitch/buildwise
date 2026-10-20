@@ -9,6 +9,5 @@ psycopg[binary]==3.2.9
 # This application accepts JSON API payloads only; multipart form parsing is not required.
 python-dotenv==1.2.4
 aiofiles==24.1.0
-# Watertight visual concept-massing solids and portable GLB scene serialization.
-manifold3d==3.5.4
-trimesh==5.1.1
+# Typed vertex/index handling for standards-compliant generated GLB concept models.
+numpy==2.5.4

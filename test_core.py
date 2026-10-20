@@ -80,12 +80,31 @@ class ConstructionCoreTests(unittest.TestCase):
             self.assertEqual(json_type, 0x4E4F534A)
             document = json.loads(data[20:20 + json_length].decode("utf-8"))
             self.assertEqual(document["asset"]["version"], "2.0")
-            self.assertGreaterEqual(len(document["nodes"]), 10)
-            self.assertTrue(any(node.get("name") == "foundation_slab_concept" for node in document["nodes"]))
-            self.assertTrue(any(node.get("name") == "roof_slab_concept" for node in document["nodes"]))
-            self.assertTrue(any("COLOR_0" in mesh["primitives"][0]["attributes"] for mesh in document["meshes"]))
+            self.assertEqual(len(document["nodes"]), 2)
+            self.assertEqual(document["nodes"][0]["name"], "Floor 1 concept massing")
+            self.assertEqual(document["nodes"][1]["name"], "Floor 2 concept massing")
             self.assertEqual(document["asset"]["extras"]["buildwise"]["modelPurpose"], "early-planning concept massing only")
             self.assertTrue(all("target" in buffer_view for buffer_view in document["bufferViews"]))
+            for mesh in document["meshes"]:
+                primitive = mesh["primitives"][0]
+                self.assertEqual(set(primitive["attributes"]), {"POSITION", "NORMAL"})
+                self.assertEqual(document["accessors"][primitive["attributes"]["POSITION"]]["count"], 24)
+                self.assertEqual(document["accessors"][primitive["attributes"]["NORMAL"]]["count"], 24)
+                index_accessor = document["accessors"][primitive["indices"]]
+                self.assertEqual(index_accessor["componentType"], 5125)
+                self.assertEqual(index_accessor["count"], 36)
+
+    def test_box_geometry_uses_outward_normals_and_triangles(self):
+        import numpy as np
+
+        positions, normals, indices = Model3DGenerator._box_geometry(-2, 0, -3, 2, 3, 3)
+        self.assertEqual(positions.dtype, np.float32)
+        self.assertEqual(normals.dtype, np.float32)
+        self.assertEqual(indices.dtype, np.uint32)
+        for start in range(0, len(indices), 3):
+            triangle = indices[start:start + 3]
+            cross = np.cross(positions[triangle[1]] - positions[triangle[0]], positions[triangle[2]] - positions[triangle[0]])
+            self.assertGreater(float(np.dot(cross, normals[triangle[0]])), 0.0)
 
     def test_schedule_has_phases_and_deterministic_start(self):
         with tempfile.TemporaryDirectory() as directory:

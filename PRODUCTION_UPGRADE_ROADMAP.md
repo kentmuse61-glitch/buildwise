@@ -7,8 +7,7 @@ This roadmap distinguishes completed hardening from larger changes that require 
 - **Interactive 3D preview:** `@google/model-viewer` 4.2.0, vendored locally and used only for authenticated, generated GLB concept models.
   - Upstream: https://github.com/google/model-viewer
   - License: Apache-2.0
-- **Richer 3D concept output:** `manifold3d` creates watertight visual wall, slab, roof, balcony, and facade-opening components; `trimesh` writes the private concept scene as GLB. Generated models carry immutable concept-only metadata and retain a dependency-free fallback GLB.
-  - Upstream: https://github.com/elalish/manifold (Apache-2.0) and https://github.com/mikedh/trimesh (MIT)
+- **Robust 3D concept output:** NumPy-backed position, normal, and index arrays produce one closed, correctly wound box mass per floor in a standard private GLB scene. Generated models carry immutable concept-only metadata and retain a valid fallback GLB.
 - **GLB quality gate:** the generated concept model was validated with Khronos glTF Validator: zero errors, warnings, information messages, and hints.
   - Upstream: https://github.com/KhronosGroup/glTF-Validator
   - License: Apache-2.0
