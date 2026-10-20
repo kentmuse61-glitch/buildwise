@@ -405,3 +405,6 @@ a { color: inherit; }
 .review-form > strong { display: block; margin-bottom: 9px; color: #486252; font-size: 10px; }
 .review-form textarea { min-height: 64px; resize: vertical; }
 @media (max-width: 620px) { .review-intake-grid { grid-template-columns: 1fr; } }
+
+/* Public, no-login concept mode */
+.public-concept-note { margin: 0; max-width: 230px; text-align: left; }

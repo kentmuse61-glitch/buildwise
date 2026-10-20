@@ -18,6 +18,10 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function projectIdValue(project) {
+  return String(project?.id ?? project?.project_id ?? project?.db_id ?? "");
+}
+
 function money(value) {
   const amount = Number(value || 0);
   return `GHS ${Math.round(amount).toLocaleString("en-GH")}`;
@@ -69,7 +73,8 @@ async function api(path, options = {}) {
     }
     if (response.status === 401 && state.token) {
       clearSession();
-      showAuth("login");
+      state.user = { username: "Guest concept mode" };
+      showWorkspace();
     }
     throw new Error(message);
   }
@@ -109,16 +114,20 @@ function showAuth(mode = "login") {
 function showWorkspace() {
   $("#auth-screen").classList.add("hidden");
   $("#workspace").classList.remove("hidden");
-  const username = state.user?.username || "Your account";
+  const isGuest = !state.token;
+  const username = state.user?.username || (isGuest ? "Guest concept mode" : "Your account");
   $("#user-label").textContent = username;
   $("#user-avatar").textContent = username.slice(0, 1).toUpperCase();
+  $("#logout-btn").classList.toggle("hidden", isGuest);
   updateNavCount();
   setView("overview");
 }
 
 async function boot() {
   if (!state.token) {
-    showAuth("login");
+    state.user = { username: "Guest concept mode" };
+    state.projects = [];
+    showWorkspace();
     return;
   }
   try {
@@ -128,7 +137,8 @@ async function boot() {
     showWorkspace();
   } catch (error) {
     clearSession();
-    showAuth("login");
+    state.user = { username: "Guest concept mode" };
+    showWorkspace();
   }
 }
 
@@ -171,7 +181,7 @@ function projectCard(project) {
   const description = escapeHtml(project.description || `${project.floors || 1} floor · ${project.area_sqm || 0} m²`);
   return `
     <article class="project-card">
-      <button class="card-open" type="button" data-action="project-open" data-project-id="${Number(project.id)}" aria-label="Open ${escapeHtml(project.name)}"></button>
+      <button class="card-open" type="button" data-action="project-open" data-project-id="${escapeHtml(projectIdValue(project))}" aria-label="Open ${escapeHtml(project.name)}"></button>
       <div class="project-card-top"><div class="project-card-icon" aria-hidden="true">⌂</div><span class="status-badge ${projectStatusClass(project.compliance_status)}">${escapeHtml(project.compliance_status || "Review required")}</span></div>
       <h3>${escapeHtml(project.name || `${type} concept`)}</h3>
       <p class="project-description">${description}</p>
@@ -206,7 +216,7 @@ function overviewMarkup() {
 }
 
 function projectRow(project) {
-  return `<button class="project-row" type="button" data-action="project-open" data-project-id="${Number(project.id)}"><span class="project-thumb" aria-hidden="true">⌂</span><span class="project-row-copy"><strong>${escapeHtml(project.name || "Untitled concept")}</strong><span>${escapeHtml(project.location || "Ghana")} · ${Number(project.floors || 1)} floor${Number(project.floors || 1) === 1 ? "" : "s"} · ${Number(project.area_sqm || 0)} m²</span></span><span class="project-row-cost"><strong>${money(project.estimated_cost_ghs)}</strong><span>${shortDate(project.created_at)}</span></span></button>`;
+  return `<button class="project-row" type="button" data-action="project-open" data-project-id="${escapeHtml(projectIdValue(project))}"><span class="project-thumb" aria-hidden="true">⌂</span><span class="project-row-copy"><strong>${escapeHtml(project.name || "Untitled concept")}</strong><span>${escapeHtml(project.location || "Ghana")} · ${Number(project.floors || 1)} floor${Number(project.floors || 1) === 1 ? "" : "s"} · ${Number(project.area_sqm || 0)} m²</span></span><span class="project-row-cost"><strong>${money(project.estimated_cost_ghs)}</strong><span>${shortDate(project.created_at)}</span></span></button>`;
 }
 
 function emptyMarkup(title, description, buttonLabel, view) {
@@ -271,8 +281,9 @@ function initCreateForm() {
       if (Object.values(handoff).some((value) => value !== null && value !== "")) payload.handoff = handoff;
       if (projectName) payload.name = projectName;
       if (budgetValue) payload.budget = Number(budgetValue);
-      const result = await api("/api/project/generate", { method: "POST", body: payload });
-      state.projects = [result, ...state.projects.filter((project) => Number(project.id) !== Number(result.id))];
+      const endpoint = state.token ? "/api/project/generate" : "/api/public/project/generate";
+      const result = await api(endpoint, { method: "POST", body: payload });
+      state.projects = [result, ...state.projects.filter((project) => projectIdValue(project) !== projectIdValue(result))];
       updateNavCount();
       output.innerHTML = projectDetailMarkup(result, true);
       await initProjectArtifacts(result);
@@ -288,14 +299,20 @@ function initCreateForm() {
 
 function projectsMarkup() {
   const projects = state.projects || [];
-  return `<div class="page-intro"><div><div class="page-kicker">YOUR SAVED WORK</div><h2>My projects</h2><p>Concepts are saved to your account. Open one to view its schematic plan, estimate, timeline and downloadable 3D massing model.</p></div><button class="button button-primary" type="button" data-view="create">＋ New concept</button></div>${projects.length ? `<div class="project-grid">${projects.map(projectCard).join("")}</div>` : emptyMarkup("Your project list is empty", "Create a project brief to save your first concept.", "Create a concept", "create")}`;
+  const guest = !state.token;
+  const kicker = guest ? "THIS BROWSER SESSION" : "YOUR SAVED WORK";
+  const description = guest
+    ? "Guest concepts are temporary and their generated links expire after one hour."
+    : "Concepts are saved to your account. Open one to view its schematic plan, estimate, timeline and downloadable 3D massing model.";
+  return `<div class="page-intro"><div><div class="page-kicker">${kicker}</div><h2>${guest ? "Temporary concepts" : "My projects"}</h2><p>${description}</p></div><button class="button button-primary" type="button" data-view="create">＋ New concept</button></div>${projects.length ? `<div class="project-grid">${projects.map(projectCard).join("")}</div>` : emptyMarkup("No concepts in this session", guest ? "Create a brief to generate a temporary concept without signing in." : "Create a project brief to save your first concept.", "Create a concept", "create")}`;
 }
 
 function projectDetailMarkup(project, embedded = false) {
   const spec = project.spec || {};
   const cost = project.cost || {};
   const compliance = project.compliance || {};
-  const id = Number(project.id || project.project_id || project.db_id);
+  const id = projectIdValue(project);
+  const isPublic = Boolean(project.is_public);
   const warningItems = [
     ...(compliance.issues || []).map((item) => ({ item, pass: false })),
     ...(compliance.warnings || []).slice(0, 6).map((item) => ({ item, pass: false })),
@@ -303,17 +320,17 @@ function projectDetailMarkup(project, embedded = false) {
   ];
   const materials = cost.materials || [];
   return `
-    ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div><div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${id}">↓ Download 3D</button><button class="button button-secondary" type="button" data-action="print-handoff" data-project-id="${id}">Print handoff</button><button class="button button-quiet" type="button" data-action="download-handoff" data-project-id="${id}">Handoff JSON</button><button class="button button-quiet" type="button" data-action="delete-project" data-project-id="${id}">Delete</button></div></div>`}
+    ${embedded ? `<div class="panel-heading" style="margin-bottom:14px"><div><div class="page-kicker">GENERATED CONCEPT</div><h3>${escapeHtml(project.name || `${spec.building_type || "Building"} · ${spec.location || "Ghana"}`)}</h3><p>Generated ${shortDate(project.created_at)} · Concept-stage outputs are approximate.</p></div><span class="status-badge">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div>` : `<div class="detail-toolbar"><div class="detail-toolbar-left"><button class="back-button" type="button" data-action="back-projects">← Projects</button><h2 class="detail-title">${escapeHtml(project.name || "Project concept")}</h2></div>${isPublic ? `<div class="disclaimer-box public-concept-note">Temporary guest concept · artifact links expire after one hour.</div>` : `<div class="detail-actions"><button class="button button-secondary" type="button" data-action="download-model" data-project-id="${escapeHtml(id)}">↓ Download 3D</button><button class="button button-secondary" type="button" data-action="print-handoff" data-project-id="${escapeHtml(id)}">Print handoff</button><button class="button button-quiet" type="button" data-action="download-handoff" data-project-id="${escapeHtml(id)}">Handoff JSON</button><button class="button button-quiet" type="button" data-action="delete-project" data-project-id="${escapeHtml(id)}">Delete</button></div>`}</div>`}
     <section class="detail-summary"><div class="detail-summary-main"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span><p>${escapeHtml(project.description || spec.raw_text || "No description")}</p><div class="detail-metrics"><span class="detail-metric"><strong>${escapeHtml(spec.building_type || project.building_type || "Residential")}</strong></span><span class="detail-metric"><strong>${Number(spec.floors || project.floors || 1)}</strong> floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span><span class="detail-metric"><strong>${Number(spec.area_sqm || project.area_sqm || 0).toLocaleString("en-GH")} m²</strong> total area</span><span class="detail-metric"><strong>${Number(spec.bedrooms || 0)}</strong> bed · <strong>${Number(spec.bathrooms || 0)}</strong> bath</span><span class="detail-metric">${escapeHtml(spec.location || project.location || "Ghana")}</span></div></div><div class="detail-cost"><span>Indicative estimate</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong><small>GHS · concept estimate</small></div></section>
     <div class="detail-grid">
       <div class="detail-column">
-        <section class="panel"><div class="panel-heading"><div><h3>3D building massing</h3><p>Drag to orbit the generated GLB concept model. Use the download in a compatible 3D tool for further review.</p></div></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div><div class="model-caption"><span>Concept massing only · no structural detail</span><button class="panel-link" type="button" data-action="download-model" data-project-id="${id}">Download GLB →</button></div></section>
-        <section class="panel"><div class="panel-heading"><div><h3>Schematic floor plan</h3><p>Ground-floor room blocks · approximate footprint.</p></div><a class="panel-link" href="#" data-action="download-plan" data-project-id="${id}">Download SVG →</a></div><div class="plan-stage"><img id="plan-image" alt="Schematic concept floor plan" src="" /><span class="artifact-loading" id="plan-loading">Preparing plan…</span></div></section>
+        <section class="panel"><div class="panel-heading"><div><h3>3D building massing</h3><p>Drag to orbit the generated GLB concept model. Use the download in a compatible 3D tool for further review.</p></div></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div><div class="model-caption"><span>Concept massing only · no structural detail</span>${isPublic ? `<span>Temporary viewer</span>` : `<button class="panel-link" type="button" data-action="download-model" data-project-id="${escapeHtml(id)}">Download GLB →</button>`}</div></section>
+        <section class="panel"><div class="panel-heading"><div><h3>Schematic floor plan</h3><p>Ground-floor room blocks · approximate footprint.</p></div>${isPublic ? `<span class="meta-pill">Temporary preview</span>` : `<a class="panel-link" href="#" data-action="download-plan" data-project-id="${escapeHtml(id)}">Download SVG →</a>`}</div><div class="plan-stage"><img id="plan-image" alt="Schematic concept floor plan" src="" /><span class="artifact-loading" id="plan-loading">Preparing plan…</span></div></section>
         <section id="workbench-panel" class="panel workbench-panel"><div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Loading editable concept rooms, transparent take-off and delivery controls…</p></div></div><div class="artifact-loading">Preparing workbench…</div></section>
         <section class="panel"><div class="panel-heading"><div><h3>First-pass project schedule</h3><p>Sequential planning timeline with an indicative seasonal allowance.</p></div><span class="meta-pill">${Number(spec.floors || project.floors || 1)} floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="schedule-container"><div class="artifact-loading">Preparing schedule…</div></div></section>
       </div>
       <div class="detail-column secondary">
-        <section class="panel"><div class="panel-heading"><div><h3>Cost overview</h3><p>Budget allocation by project category.</p></div><button class="panel-link" type="button" data-action="download-cost" data-project-id="${id}">Download CSV →</button></div><div class="cost-hero"><div><span>Indicative total</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong></div><div class="cost-range"><span>Planning range ±15%</span><strong>${money(cost.indicative_range_low_ghs)} – ${money(cost.indicative_range_high_ghs)}</strong></div></div><table class="cost-table"><tbody><tr><td>Materials allocation</td><td>${money(cost.total_materials_ghs)}</td></tr><tr><td>Labour allowance</td><td>${money(cost.labour_cost_ghs)}</td></tr><tr><td>Professional fees allowance</td><td>${money(cost.professional_fees_ghs)}</td></tr><tr><td>Contingency allowance</td><td>${money(cost.contingency_ghs)}</td></tr></tbody></table>${cost.budget_constraint_ghs ? `<div class="disclaimer-box">Budget target: <strong>${money(cost.budget_constraint_ghs)}</strong> · ${cost.within_budget ? "Indicative estimate is within target." : "Indicative estimate exceeds target."}</div>` : ""}<div class="disclaimer-box">${escapeHtml(cost.disclaimer || "Illustrative estimate only; obtain current local prices and a quantity-surveyor estimate.")}</div><table class="cost-table"><tbody>${materials.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${money(item.estimated_amount_ghs)}</td></tr>`).join("")}</tbody></table></section>
+        <section class="panel"><div class="panel-heading"><div><h3>Cost overview</h3><p>Budget allocation by project category.</p></div>${isPublic ? `<span class="meta-pill">Temporary preview</span>` : `<button class="panel-link" type="button" data-action="download-cost" data-project-id="${escapeHtml(id)}">Download CSV →</button>`}</div><div class="cost-hero"><div><span>Indicative total</span><strong>${money(cost.total_ghs ?? project.estimated_cost_ghs)}</strong></div><div class="cost-range"><span>Planning range ±15%</span><strong>${money(cost.indicative_range_low_ghs)} – ${money(cost.indicative_range_high_ghs)}</strong></div></div><table class="cost-table"><tbody><tr><td>Materials allocation</td><td>${money(cost.total_materials_ghs)}</td></tr><tr><td>Labour allowance</td><td>${money(cost.labour_cost_ghs)}</td></tr><tr><td>Professional fees allowance</td><td>${money(cost.professional_fees_ghs)}</td></tr><tr><td>Contingency allowance</td><td>${money(cost.contingency_ghs)}</td></tr></tbody></table>${cost.budget_constraint_ghs ? `<div class="disclaimer-box">Budget target: <strong>${money(cost.budget_constraint_ghs)}</strong> · ${cost.within_budget ? "Indicative estimate is within target." : "Indicative estimate exceeds target."}</div>` : ""}<div class="disclaimer-box">${escapeHtml(cost.disclaimer || "Illustrative estimate only; obtain current local prices and a quantity-surveyor estimate.")}</div><table class="cost-table"><tbody>${materials.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${money(item.estimated_amount_ghs)}</td></tr>`).join("")}</tbody></table></section>
         <section class="panel"><div class="panel-heading"><div><h3>Preliminary review</h3><p>Automated screening only — not a code approval.</p></div></div><div class="compliance-status"><span class="status-badge ${projectStatusClass(compliance.status || project.compliance_status)}">${escapeHtml(compliance.status || project.compliance_status || "Review required")}</span></div><ul class="compliance-list">${warningItems.map((entry) => `<li class="${entry.pass ? "pass" : ""}">${escapeHtml(entry.item)}</li>`).join("") || `<li>${escapeHtml(compliance.disclaimer || "Have the design reviewed by licensed local professionals and the relevant authority.")}</li>`}</ul><div class="disclaimer-box">${escapeHtml(compliance.disclaimer || "For early planning only. Confirm all code, permit, structural and site requirements locally.")}</div></section>
         <section class="panel"><div class="panel-heading"><div><h3>Assumptions</h3><p>Values extracted from your brief.</p></div></div><table class="cost-table"><tbody><tr><td>Material concept</td><td>${escapeHtml(String(spec.material || "—").replaceAll("_", " "))}</td></tr><tr><td>Roof concept</td><td>${escapeHtml(String(spec.roof_type || "—").replaceAll("_", " "))}</td></tr><tr><td>Foundation concept</td><td>${escapeHtml(String(spec.foundation_type || "—").replaceAll("_", " "))}</td></tr><tr><td>Special features</td><td>${escapeHtml((spec.special_features || []).join(", ") || "None specified")}</td></tr>${spec.planning_guidance ? `<tr><td>Planning template</td><td>${spec.planning_guidance.applied_bathroom_template ? "Applied at your request" : "Suggestions only — your stated bathroom count kept"}</td></tr>` : ""}</tbody></table>${spec.planning_guidance ? `<div class="disclaimer-box">${escapeHtml(spec.planning_guidance.disclaimer || "Planning suggestions only; obtain a professional review.")}</div>` : ""}<div class="disclaimer-box">${escapeHtml(cost.rate_note || "The included starter cost rates are not independently verified.")}</div></section>
       </div>
@@ -322,7 +339,8 @@ function projectDetailMarkup(project, embedded = false) {
 
 async function openProject(projectId) {
   try {
-    const project = await api(`/api/projects/${Number(projectId)}`);
+    const localProject = state.projects.find((project) => projectIdValue(project) === String(projectId));
+    const project = localProject?.is_public ? localProject : await api(`/api/projects/${Number(projectId)}`);
     state.currentProject = project;
     state.view = "projectDetail";
     $("#page-eyebrow").textContent = "PROJECT DETAILS";
@@ -337,7 +355,12 @@ async function openProject(projectId) {
 }
 
 async function initProjectArtifacts(project) {
-  const id = Number(project.id || project.project_id || project.db_id);
+  const id = projectIdValue(project);
+  const isPublic = Boolean(project.is_public);
+  const artifactUrl = (name) => {
+    if (isPublic) return name === "model" ? project.model_3d_url : name === "plan" ? project.plan_url : project.schedule_url;
+    return `/api/projects/${id}/artifacts/${name === "model" ? "model.glb" : name === "plan" ? "plan.svg" : "schedule.json"}`;
+  };
   const modelViewer = $("#model-viewer");
   const fallbackCanvas = $("#model-canvas");
   const modelError = $("#model-error");
@@ -351,7 +374,7 @@ async function initProjectArtifacts(project) {
   };
   if (modelViewer) {
     try {
-      const blob = await api(`/api/projects/${id}/artifacts/model.glb`);
+      const blob = await api(artifactUrl("model"));
       const previousUrl = modelViewer.dataset.objectUrl;
       if (previousUrl) URL.revokeObjectURL(previousUrl);
       const url = URL.createObjectURL(blob);
@@ -369,7 +392,7 @@ async function initProjectArtifacts(project) {
   const planLoading = $("#plan-loading");
   if (planImage) {
     try {
-      const blob = await api(`/api/projects/${id}/artifacts/plan.svg`);
+      const blob = await api(artifactUrl("plan"));
       const url = URL.createObjectURL(blob);
       planImage.onload = () => { if (planLoading) planLoading.hidden = true; };
       planImage.onerror = () => { if (planLoading) planLoading.textContent = "Could not display the plan."; };
@@ -382,7 +405,7 @@ async function initProjectArtifacts(project) {
   const scheduleContainer = $("#schedule-container");
   if (scheduleContainer) {
     try {
-      const schedule = await api(`/api/projects/${id}/artifacts/schedule.json`);
+      const schedule = await api(artifactUrl("schedule"));
       scheduleContainer.innerHTML = timelineMarkup(schedule);
     } catch (error) {
       scheduleContainer.innerHTML = `<div class="form-error">${escapeHtml(error.message)}</div>`;
@@ -436,11 +459,16 @@ function workbenchMarkup(data) {
 
 async function initWorkbench(project) {
   const panel = $("#workbench-panel");
-  const id = Number(project.id || project.project_id || project.db_id);
+  const id = projectIdValue(project);
   if (!panel || !id) return;
   try {
-    const data = await api(`/api/projects/${id}/workbench`);
-    panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Editable concept geometry, transparent quantities and controlled progress records.</p></div></div>${workbenchMarkup(data)}`;
+    const isPublic = Boolean(project.is_public);
+    const data = isPublic ? project.workbench : await api(`/api/projects/${id}/workbench`);
+    panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>${isPublic ? "Read-only temporary concept allowances. Create another concept to revise this public session." : "Editable concept geometry, transparent quantities and controlled progress records."}</p></div></div>${workbenchMarkup(data)}${isPublic ? `<div class="disclaimer-box">Guest concepts are not stored. Editing, delivery updates and review manifests require a future saved-workspace mode.</div>` : ""}`;
+    if (isPublic) {
+      panel.querySelectorAll("form button, form input, form textarea, form select").forEach((element) => { element.disabled = true; });
+      return;
+    }
     initDesignStudio(project, data.design_studio || {});
     initDeliveryTracker(project);
     initReviewInputs(project);
@@ -743,7 +771,8 @@ $("#auth-form").addEventListener("submit", async (event) => {
 
 $("#logout-btn").addEventListener("click", () => {
   clearSession();
-  showAuth("login");
+  state.user = { username: "Guest concept mode" };
+  showWorkspace();
 });
 
 $("#mobile-menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));

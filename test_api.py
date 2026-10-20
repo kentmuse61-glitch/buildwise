@@ -149,6 +149,31 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(debug_model.status_code, 200)
         self.assertEqual(debug_model.content[:4], b"glTF")
 
+    def test_public_concepts_are_ephemeral_and_do_not_need_login(self):
+        public = self.client.post("/api/public/project/generate", json={
+            "name": "Guest concept",
+            "description": "A 2-bedroom solar home in Kumasi with 120 sqm total floor area.",
+            "location": "Kumasi",
+        })
+        self.assertEqual(public.status_code, 200, public.text)
+        concept = public.json()
+        self.assertTrue(concept["is_public"])
+        self.assertEqual(concept["status"], "temporary-public-concept")
+        self.assertIn("expire", concept["public_note"])
+        self.assertIn("quantity_takeoff", concept["workbench"])
+
+        plan = self.client.get(concept["plan_url"])
+        self.assertEqual(plan.status_code, 200, plan.text)
+        self.assertTrue(plan.headers["content-type"].startswith("image/svg+xml"))
+        self.assertEqual(plan.headers["cache-control"], "no-store")
+        model = self.client.get(concept["model_3d_url"])
+        self.assertEqual(model.status_code, 200, model.text)
+        self.assertEqual(model.content[:4], b"glTF")
+        schedule = self.client.get(concept["schedule_url"])
+        self.assertEqual(schedule.status_code, 200, schedule.text)
+        self.assertIn("phases", schedule.json())
+        self.assertEqual(self.client.get("/api/public/artifacts/not-a-token/model.glb").status_code, 404)
+
     def test_security_headers_are_present(self):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)

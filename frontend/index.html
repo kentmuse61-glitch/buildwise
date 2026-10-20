@@ -12,7 +12,7 @@
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <div id="auth-screen" class="auth-screen">
+  <div id="auth-screen" class="auth-screen hidden" aria-hidden="true">
     <div class="auth-showcase">
       <div class="brand brand-large">
         <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -73,7 +73,7 @@
     </div>
   </div>
 
-  <div id="workspace" class="workspace hidden">
+  <div id="workspace" class="workspace">
     <aside id="sidebar" class="sidebar">
       <a class="brand sidebar-brand" href="#overview" aria-label="Buildwise GH home">
         <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -83,7 +83,7 @@
       <nav class="side-nav" aria-label="Main navigation">
         <button class="nav-item active" type="button" data-view="overview"><span class="nav-glyph">⌂</span><span>Overview</span></button>
         <button class="nav-item" type="button" data-view="create"><span class="nav-glyph nav-plus">＋</span><span>New concept</span></button>
-        <button class="nav-item" type="button" data-view="projects"><span class="nav-glyph">▤</span><span>My projects</span><span id="nav-project-count" class="nav-count">0</span></button>
+        <button class="nav-item" type="button" data-view="projects"><span class="nav-glyph">▤</span><span>Session concepts</span><span id="nav-project-count" class="nav-count">0</span></button>
         <button class="nav-item" type="button" data-view="contractors"><span class="nav-glyph">⌕</span><span>Contractor directory</span></button>
       </nav>
       <div class="sidebar-bottom">

@@ -6,8 +6,8 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 
 ## What's included
 
-- Account registration and sign-in with hashed passwords and short-lived bearer tokens.
-- Private user-owned project records, with optional project names and per-project deletion.
+- Public no-login concept mode: visitors can generate a temporary browser-session concept without creating an account. Its unguessable SVG/GLB/schedule links expire after one hour or on a service restart.
+- Legacy authenticated account/project API routes remain available for existing private project records, with optional project names and per-project deletion.
 - SQLite locally and PostgreSQL on Render.
 - Lightweight, deterministic brief parser — no large model download or paid AI API key.
 - Generated schematic SVG floor plan, interactive in-browser GLB massing preview, downloadable glTF 2.0 binary (`.glb`) model, and CSV estimate export.
@@ -72,8 +72,10 @@ Copy `.env.example` to `.env` and set:
 - `POST /api/auth/register` — create an account.
 - `POST /api/auth/login` — obtain a bearer token.
 - `GET /api/auth/me` — current account (`Authorization: Bearer ...`).
-- `POST /api/project/generate` — generate and save a project concept (authenticated).
-- `GET /api/projects` and `GET /api/projects/{id}` — list/open your projects (authenticated).
+- `POST /api/public/project/generate` — generate a no-login, non-persistent concept with time-limited public artifact URLs.
+- `GET /api/public/artifacts/{token}/{plan.svg|model.glb|schedule.json}` — retrieve one temporary public artifact while its unguessable link is valid.
+- `POST /api/project/generate` — generate and save a project concept (authenticated legacy/private API).
+- `GET /api/projects` and `GET /api/projects/{id}` — list/open your projects (authenticated legacy/private API).
 - `DELETE /api/projects/{id}` — delete one of your projects (authenticated).
 - `GET /api/projects/{id}/artifacts/cost.csv` — download an indicative cost allocation (authenticated).
 - `GET /api/projects/{id}/artifacts/plan.svg` — generated schematic SVG (authenticated).

@@ -8,7 +8,9 @@ import io
 import json
 import os
 import re
-from datetime import datetime, timezone
+import secrets
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -48,13 +50,23 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", str(BASE_DIR / "output"))).expanduser().resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Public concepts intentionally never enter the project database.  Their
+# unguessable artifact links are process-local, time-limited and regenerated on
+# demand; this keeps legacy authenticated projects private when public concept
+# mode is enabled.
+_PUBLIC_ARTIFACT_TTL = timedelta(hours=1)
+_PUBLIC_GENERATION_WINDOW_SECONDS = 60.0
+_PUBLIC_GENERATION_LIMIT = 5
+_public_artifacts: dict[str, dict[str, Any]] = {}
+_public_generation_history: dict[str, list[float]] = {}
+
 # For a new MVP deployment this creates the initial tables. Use Postgres on Render;
 # SQLite is intended for local development and single-process testing only.
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.1.0",
+    version="1.2.0",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
@@ -224,6 +236,34 @@ class VectorInventoryRequest(BaseModel):
     layer_counts: dict[str, int] = Field(min_length=1, max_length=100)
     closed_area_sqm: list[float] = Field(default_factory=list, max_length=500)
     source_note: str = Field(default="", max_length=500)
+
+
+def _prune_public_artifacts() -> None:
+    """Remove expired in-memory public artifact records and their known files."""
+    now = datetime.now(timezone.utc)
+    for token, record in list(_public_artifacts.items()):
+        expires_at = record.get("expires_at")
+        if not isinstance(expires_at, datetime) or expires_at > now:
+            continue
+        for path in record.get("paths", {}).values():
+            try:
+                resolved = Path(path).resolve()
+                if resolved.parent == OUTPUT_DIR and resolved.is_file():
+                    resolved.unlink()
+            except OSError:
+                pass
+        _public_artifacts.pop(token, None)
+
+
+def _check_public_generation_limit(request: Request) -> None:
+    """Apply a small per-process abuse guard to anonymous artifact generation."""
+    address = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    recent = [entry for entry in _public_generation_history.get(address, []) if now - entry < _PUBLIC_GENERATION_WINDOW_SECONDS]
+    if len(recent) >= _PUBLIC_GENERATION_LIMIT:
+        raise HTTPException(status_code=429, detail="Please wait before generating another public concept")
+    recent.append(now)
+    _public_generation_history[address] = recent
 
 
 def _load_materials_data() -> dict[str, Any]:
@@ -694,6 +734,95 @@ def save_vector_inventory(
     project.spec_json = json.dumps(spec, ensure_ascii=False)
     db.commit()
     return {"message": "Vector inventory saved", "review": summary, "workbench": workbench.build(spec)}
+
+
+@app.post("/api/public/project/generate")
+def generate_public_project(req: ProjectRequest, request: Request):
+    """Generate a time-limited, non-persistent anonymous concept workspace.
+
+    Public mode never writes a ``Project`` row and never exposes an existing
+    user's project.  It is intended for a no-login first experience; links
+    expire after one hour or earlier on a service restart.
+    """
+    _prune_public_artifacts()
+    _check_public_generation_limit(request)
+    spec = parse_construction_request(req.description)
+    if req.location and req.location.strip().lower() not in {"auto", "automatic"}:
+        spec["location"] = req.location.strip()
+    if req.budget is not None:
+        spec["budget_constraint"] = req.budget
+    spec = plan_gen.prepare_residential_guidance(spec, req.apply_bathroom_template)
+    if req.handoff is not None:
+        handoff = req.handoff.model_dump()
+        if any(value not in (None, "") for value in handoff.values()):
+            spec["professional_handoff"] = handoff
+
+    compliance_result = compliance.check(spec)
+    cost_result = _estimate_cost(spec)
+    project_name = req.name.strip() if req.name and req.name.strip() else f"{str(spec['building_type']).title()} concept · {spec['location']}"
+    token = secrets.token_urlsafe(24)
+    artifact_id = f"public-{token}"
+    try:
+        paths = {
+            "plan.svg": Path(plan_gen.generate_plan(spec, artifact_id)).resolve(),
+            "model.glb": Path(model_3d.generate_model(spec, artifact_id)).resolve(),
+            "schedule.json": Path(schedule_4d.generate_schedule(spec, artifact_id)).resolve(),
+        }
+    except (OSError, TypeError, ValueError, ArithmeticError) as error:
+        raise HTTPException(status_code=500, detail="Could not generate the public concept artifacts") from error
+    if not all(path.is_file() and path.parent == OUTPUT_DIR for path in paths.values()):
+        raise HTTPException(status_code=500, detail="Public concept artifacts were not created")
+    created_at = datetime.now(timezone.utc)
+    expires_at = created_at + _PUBLIC_ARTIFACT_TTL
+    _public_artifacts[token] = {"paths": paths, "expires_at": expires_at}
+    prefix = f"/api/public/artifacts/{token}"
+    return {
+        "id": token,
+        "is_public": True,
+        "expires_at": expires_at.isoformat(),
+        "name": project_name[:200],
+        "description": req.description.strip(),
+        "location": spec["location"],
+        "building_type": spec["building_type"],
+        "floors": int(spec["floors"]),
+        "rooms": int(spec["rooms_total"]),
+        "area_sqm": float(spec["area_sqm"]),
+        "estimated_cost_ghs": cost_result["total_ghs"],
+        "compliance_status": compliance_result["status"],
+        "status": "temporary-public-concept",
+        "created_at": created_at.isoformat(),
+        "plan_url": f"{prefix}/plan.svg",
+        "model_3d_url": f"{prefix}/model.glb",
+        "schedule_url": f"{prefix}/schedule.json",
+        "spec": spec,
+        "cost": cost_result,
+        "compliance": compliance_result,
+        "workbench": workbench.build(spec),
+        "public_note": "This anonymous concept is not saved to an account and its artifact links expire in one hour.",
+    }
+
+
+@app.get("/api/public/artifacts/{token}/{artifact_name}")
+def get_public_artifact(token: str, artifact_name: str):
+    """Serve one temporary public concept artifact through an unguessable link."""
+    _prune_public_artifacts()
+    record = _public_artifacts.get(token)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Public concept artifact not found or expired")
+    allowed_types = {
+        "plan.svg": "image/svg+xml",
+        "model.glb": "model/gltf-binary",
+        "schedule.json": "application/json",
+    }
+    path = record.get("paths", {}).get(artifact_name)
+    if artifact_name not in allowed_types or not isinstance(path, Path) or not path.is_file():
+        raise HTTPException(status_code=404, detail="Public concept artifact not found or expired")
+    return FileResponse(
+        path,
+        media_type=allowed_types[artifact_name],
+        filename=f"buildwise-public-{artifact_name}",
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
+    )
 
 
 @app.post("/api/debug/generate-test")
