@@ -67,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.2.8",
+    version="1.2.9",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
@@ -856,8 +856,10 @@ def generate_public_project(req: ProjectRequest, request: Request):
     artifact_id = f"public-{token}"
     try:
         paths = {
-            "plan.svg": Path(plan_gen.generate_plan(spec, artifact_id)).resolve(),
+            "plan.svg": Path(plan_gen.generate_plan(spec, artifact_id, style="presentation")).resolve(),
+            "plan-technical.svg": Path(plan_gen.generate_plan(spec, artifact_id, style="technical")).resolve(),
             "model.glb": Path(model_3d.generate_model(spec, artifact_id)).resolve(),
+            "dollhouse.glb": Path(model_3d.generate_dollhouse_model(spec, artifact_id)).resolve(),
             "schedule.json": Path(schedule_4d.generate_schedule(spec, artifact_id)).resolve(),
         }
     except (OSError, TypeError, ValueError, ArithmeticError) as error:
@@ -871,6 +873,7 @@ def generate_public_project(req: ProjectRequest, request: Request):
     _public_artifacts[token] = {"paths": paths, "spec": spec, "expires_at": expires_at}
     prefix = f"/api/public/artifacts/{token}"
     floor_plan_urls = [f"{prefix}/plan-floor-{floor}.svg" for floor in range(1, _concept_floor_count(spec) + 1)]
+    technical_floor_plan_urls = [f"{prefix}/plan-technical-floor-{floor}.svg" for floor in range(1, _concept_floor_count(spec) + 1)]
     return {
         "id": token,
         "is_public": True,
@@ -887,8 +890,11 @@ def generate_public_project(req: ProjectRequest, request: Request):
         "status": "temporary-public-concept",
         "created_at": created_at.isoformat(),
         "plan_url": f"{prefix}/plan.svg",
+        "technical_plan_url": f"{prefix}/plan-technical.svg",
         "floor_plan_urls": floor_plan_urls,
+        "technical_floor_plan_urls": technical_floor_plan_urls,
         "model_3d_url": f"{prefix}/model.glb",
+        "dollhouse_3d_url": f"{prefix}/dollhouse.glb",
         "schedule_url": f"{prefix}/schedule.json",
         "spec": spec,
         "cost": cost_result,
@@ -927,16 +933,17 @@ def get_public_artifact(token: str, artifact_name: str):
 
     # Strict route matching and the in-memory temporary brief prevent a floor
     # request from reading arbitrary paths or another user's project.
-    floor_match = re.fullmatch(r"plan-floor-([1-9][0-9]?)\.svg", artifact_name)
+    floor_match = re.fullmatch(r"plan(?P<technical>-technical)?-floor-(?P<floor>[1-9][0-9]?)\.svg", artifact_name)
     if floor_match:
         spec = record.get("spec")
-        floor = int(floor_match.group(1))
+        floor = int(floor_match.group("floor"))
+        style = "technical" if floor_match.group("technical") else "presentation"
         if not isinstance(spec, dict) or floor > _concept_floor_count(spec):
             raise HTTPException(status_code=404, detail="Floor plan not found")
         path = paths.get(artifact_name)
         if path is None:
             try:
-                path = Path(plan_gen.generate_plan(_plan_spec_for_floor(spec, floor), f"public-{token}-floor-{floor}")).resolve()
+                path = Path(plan_gen.generate_plan(_plan_spec_for_floor(spec, floor), f"public-{token}-floor-{floor}", style=style)).resolve()
             except (OSError, TypeError, ValueError, ArithmeticError) as error:
                 raise HTTPException(status_code=500, detail="Could not generate the selected floor plan") from error
             paths[artifact_name] = path
@@ -944,7 +951,9 @@ def get_public_artifact(token: str, artifact_name: str):
     else:
         allowed_types = {
             "plan.svg": "image/svg+xml",
+            "plan-technical.svg": "image/svg+xml",
             "model.glb": "model/gltf-binary",
+            "dollhouse.glb": "model/gltf-binary",
             "schedule.json": "application/json",
         }
         if artifact_name not in allowed_types:
@@ -1025,6 +1034,7 @@ def get_debug_artifact(artifact_name: str, current_user: User = Depends(get_curr
 def get_project_plan(
     project_id: int,
     floor: int | None = Query(default=None, ge=1, le=50),
+    style: Literal["presentation", "technical"] = Query(default="presentation"),
     current_user: User = Depends(get_current_user),
     db=Depends(get_db),
 ):
@@ -1037,8 +1047,9 @@ def get_project_plan(
         selected_floor = min(max(int(requested_floor), 1), _concept_floor_count(spec))
     except (TypeError, ValueError):
         selected_floor = 1
-    path = plan_gen.generate_plan(_plan_spec_for_floor(spec, selected_floor), f"{project.id}-floor-{selected_floor}")
-    return FileResponse(path, media_type="image/svg+xml", filename=f"concept-plan-{project.id}-floor-{selected_floor}.svg")
+    path = plan_gen.generate_plan(_plan_spec_for_floor(spec, selected_floor), f"{project.id}-floor-{selected_floor}", style=style)
+    style_suffix = "-technical" if style == "technical" else ""
+    return FileResponse(path, media_type="image/svg+xml", filename=f"concept-plan-{project.id}-floor-{selected_floor}{style_suffix}.svg")
 
 @app.get("/api/projects/{project_id}/artifacts/model.glb")
 def get_project_model(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
@@ -1046,6 +1057,14 @@ def get_project_model(project_id: int, current_user: User = Depends(get_current_
     spec = _load_project_spec(project)
     path = model_3d.generate_model(spec, project.id)
     return FileResponse(path, media_type="model/gltf-binary", filename=f"concept-model-{project.id}.glb")
+
+
+@app.get("/api/projects/{project_id}/artifacts/dollhouse.glb")
+def get_project_dollhouse(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    """Return an original room-aware cutaway concept GLB for an owned project."""
+    project = _get_owned_project(project_id, current_user, db)
+    path = model_3d.generate_dollhouse_model(_load_project_spec(project), project.id)
+    return FileResponse(path, media_type="model/gltf-binary", filename=f"concept-dollhouse-{project.id}.glb")
 
 
 @app.get("/api/projects/{project_id}/artifacts/schedule.json")

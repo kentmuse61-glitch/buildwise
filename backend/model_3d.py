@@ -16,6 +16,8 @@ from typing import Any
 
 import numpy as np
 
+from .plan_generator import PlanGenerator
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +42,101 @@ class Model3DGenerator:
         except (OSError, TypeError, ValueError, ArithmeticError, OverflowError, struct.error) as error:
             logger.exception("3D model generation failed for project %s: %s", safe_id, error)
             return self._generate_fallback_model(safe_id)
+
+    def generate_dollhouse_model(self, spec: dict[str, Any], project_id: str | int) -> str:
+        """Write an open-roof, room-aware cutaway GLB concept preview.
+
+        This is a visual floor-programme aid: room blocks, simplified walls and
+        furniture cues are intentionally schematic and never represent a
+        structural, fire, accessibility, services or construction model.
+        """
+        safe_id = self._safe_id(project_id)
+        filepath = Path(self.output_dir) / f"dollhouse_{safe_id}.glb"
+        try:
+            self._build_dollhouse_glb(spec, filepath)
+            return str(filepath)
+        except (OSError, TypeError, ValueError, ArithmeticError, OverflowError, struct.error) as error:
+            logger.exception("Dollhouse generation failed for project %s: %s", safe_id, error)
+            return self._generate_fallback_model(f"{safe_id}-dollhouse")
+
+    def _build_dollhouse_glb(self, spec: dict[str, Any], filepath: Path) -> None:
+        floors = self._number_as_int(spec.get("floors"), default=1, minimum=1, maximum=self._MAX_FLOORS)
+        floor_height = self._number_as_float(spec.get("ceiling_height"), default=3.05, minimum=2.5, maximum=5.0)
+        wall_height = max(2.25, floor_height - 0.42)
+        wall_thickness = 0.12
+        materials = self._dollhouse_materials()
+        meshes: list[dict[str, Any]] = []
+        planner = PlanGenerator(self.output_dir)
+
+        def add_box(name: str, material: int, x1: float, y1: float, z1: float, x2: float, y2: float, z2: float) -> None:
+            positions, normals, indices = self._box_geometry(x1, y1, z1, x2, y2, z2)
+            meshes.append({"name": name, "material": material, "positions": positions, "normals": normals, "indices": indices})
+
+        all_extents: list[tuple[float, float, float, float]] = []
+        for floor_number in range(1, floors + 1):
+            design = dict(spec.get("design_studio")) if isinstance(spec.get("design_studio"), dict) else {}
+            design["active_floor"] = floor_number
+            floor_spec = dict(spec)
+            floor_spec["design_studio"] = design
+            rooms = planner.layout_rooms(floor_spec)
+            if not rooms:
+                continue
+            min_x = min(float(room["x"]) for room in rooms)
+            min_z = min(float(room["y"]) for room in rooms)
+            max_x = max(float(room["x"]) + float(room["w"]) for room in rooms)
+            max_z = max(float(room["y"]) + float(room["h"]) for room in rooms)
+            width, depth = max(1.0, max_x - min_x), max(1.0, max_z - min_z)
+            centre_x, centre_z = min_x + width / 2, min_z + depth / 2
+            x1, x2 = -width / 2, width / 2
+            z1, z2 = -depth / 2, depth / 2
+            base = (floor_number - 1) * floor_height
+            all_extents.append((x1, x2, z1, z2))
+            add_box(f"Floor {floor_number} dollhouse slab", 1, x1 - .14, base - .10, z1 - .14, x2 + .14, base, z2 + .14)
+            # Back and left enclosure retain a readable cutaway from the front-right camera.
+            add_box(f"Floor {floor_number} back shell wall", 0, x1, base, z2 - wall_thickness, x2, base + wall_height, z2)
+            add_box(f"Floor {floor_number} left shell wall", 0, x1, base, z1, x1 + wall_thickness, base + wall_height, z2)
+            for room_index, room in enumerate(rooms, start=1):
+                raw_x, raw_z = float(room["x"]), float(room["y"])
+                room_w, room_d = float(room["w"]), float(room["h"])
+                rx1, rz1 = raw_x - centre_x, raw_z - centre_z
+                rx2, rz2 = rx1 + room_w, rz1 + room_d
+                room_type = str(room.get("type") or "room").split("_", 1)[0]
+                room_label = str(room.get("label") or f"Room {room_index}")[:60]
+                floor_material = {"living": 2, "dining": 2, "bedroom": 3, "bathroom": 4, "ensuite": 4, "wc": 4, "kitchen": 1}.get(room_type, 1)
+                add_box(f"Floor {floor_number} {room_label} floor finish", floor_material, rx1 + .04, base, rz1 + .04, rx2 - .04, base + .045, rz2 - .04)
+                # Two legible wall directions create room demarcation while the front and right remain open.
+                add_box(f"Floor {floor_number} {room_label} rear room wall", 0, rx1, base, rz2 - wall_thickness, rx2, base + wall_height, rz2)
+                add_box(f"Floor {floor_number} {room_label} left room wall", 0, rx1, base, rz1, rx1 + wall_thickness, base + wall_height, rz2)
+                self._append_dollhouse_furniture(add_box, floor_number, room_label, room_type, base, rx1, rz1, rx2, rz2)
+
+        if not all_extents:
+            raise ValueError("No rooms were available for dollhouse generation")
+        overall_x1 = min(extent[0] for extent in all_extents)
+        overall_x2 = max(extent[1] for extent in all_extents)
+        overall_z1 = min(extent[2] for extent in all_extents)
+        overall_z2 = max(extent[3] for extent in all_extents)
+        add_box("Dollhouse landscape plinth", 6, overall_x1 - 1.0, -0.22, overall_z1 - 1.0, overall_x2 + 1.0, -0.12, overall_z2 + 1.0)
+        self._write_bytes(filepath, self._build_glb_bytes(
+            meshes, materials, model_purpose="early-planning cutaway floor-programme visualization only"
+        ))
+
+    @staticmethod
+    def _append_dollhouse_furniture(add_box: Any, floor_number: int, room_label: str, room_type: str, base: float, x1: float, z1: float, x2: float, z2: float) -> None:
+        """Add abstract furniture cues only; they are not fit-out or clearance layouts."""
+        width, depth = x2 - x1, z2 - z1
+        if width < .9 or depth < .9:
+            return
+        cx, cz = (x1 + x2) / 2, (z1 + z2) / 2
+        prefix = f"Floor {floor_number} {room_label}"
+        if room_type == "bedroom":
+            add_box(f"{prefix} bed cue", 5, cx - width * .22, base + .05, cz - depth * .20, cx + width * .22, base + .38, cz + depth * .20)
+        elif room_type in {"living", "family"}:
+            add_box(f"{prefix} sofa cue", 5, cx - width * .25, base + .05, z1 + depth * .15, cx + width * .25, base + .34, z1 + depth * .28)
+            add_box(f"{prefix} table cue", 5, cx - width * .10, base + .05, cz - depth * .10, cx + width * .10, base + .24, cz + depth * .10)
+        elif room_type in {"kitchen", "dining"}:
+            add_box(f"{prefix} counter cue", 5, x1 + width * .18, base + .05, z1 + depth * .18, x1 + width * .82, base + .34, z1 + depth * .32)
+        elif room_type in {"bathroom", "ensuite", "wc"}:
+            add_box(f"{prefix} fixture cue", 5, cx - width * .16, base + .05, cz - depth * .18, cx + width * .16, base + .22, cz + depth * .18)
 
     def _generate_fallback_model(self, project_id: str | int) -> str:
         """Write a small, valid one-storey fallback massing GLB."""
@@ -187,6 +284,19 @@ class Model3DGenerator:
         self._write_bytes(filepath, self._build_glb_bytes(meshes, materials))
 
     @staticmethod
+    def _dollhouse_materials() -> list[dict[str, Any]]:
+        """Muted original concept materials for a readable cutaway preview."""
+        return [
+            {"name": "Warm concept walls", "baseColorFactor": [0.92, 0.91, 0.86, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.92},
+            {"name": "Light oak concept floor", "baseColorFactor": [0.71, 0.57, 0.40, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.84},
+            {"name": "Living concept finish", "baseColorFactor": [0.71, 0.79, 0.71, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
+            {"name": "Bedroom concept finish", "baseColorFactor": [0.67, 0.77, 0.87, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
+            {"name": "Wet-room concept finish", "baseColorFactor": [0.82, 0.88, 0.90, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.68},
+            {"name": "Furniture cue", "baseColorFactor": [0.38, 0.24, 0.15, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.72},
+            {"name": "Landscape base", "baseColorFactor": [0.38, 0.58, 0.37, 1.0], "metallicFactor": 0.0, "roughnessFactor": 1.0},
+        ]
+
+    @staticmethod
     def _modern_materials() -> list[dict[str, Any]]:
         """Return restrained concept-only facade materials, without texture assets."""
         return [
@@ -236,7 +346,12 @@ class Model3DGenerator:
             raise ValueError("Box geometry has an unexpected shape")
         return positions, normals, indices
 
-    def _build_glb_bytes(self, floor_meshes: list[dict[str, Any]], materials: list[dict[str, Any]] | None = None) -> bytes:
+    def _build_glb_bytes(
+        self,
+        floor_meshes: list[dict[str, Any]],
+        materials: list[dict[str, Any]] | None = None,
+        model_purpose: str = "early-planning concept massing only",
+    ) -> bytes:
         """Serialize typed geometry arrays to a complete, aligned GLB 2.0 file."""
         if not floor_meshes:
             raise ValueError("At least one floor mesh is required")
@@ -304,7 +419,7 @@ class Model3DGenerator:
                 "generator": "Buildwise GH",
                 "extras": {
                     "buildwise": {
-                        "modelPurpose": "early-planning concept massing only",
+                        "modelPurpose": model_purpose,
                         "notForConstructionOrPermit": True,
                         "units": "metres",
                     }

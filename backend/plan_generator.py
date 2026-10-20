@@ -24,12 +24,14 @@ class PlanGenerator:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
-    def generate_plan(self, spec: dict[str, Any], project_id: str | int) -> str:
-        """Generate a plan file, falling back to a valid SVG if needed."""
+    def generate_plan(self, spec: dict[str, Any], project_id: str | int, style: str = "presentation") -> str:
+        """Generate a styled concept plan file, falling back to a valid SVG if needed."""
         safe_id = self._safe_id(project_id)
-        filepath = os.path.join(self.output_dir, f"plan_{safe_id}.svg")
+        visual_style = "technical" if style == "technical" else "presentation"
+        suffix = "_technical" if visual_style == "technical" else ""
+        filepath = os.path.join(self.output_dir, f"plan_{safe_id}{suffix}.svg")
         try:
-            svg_content = self.build_svg(spec)
+            svg_content = self.build_svg(spec, visual_style=visual_style)
             with open(filepath, "w", encoding="utf-8") as output:
                 output.write(svg_content)
             return filepath
@@ -102,11 +104,15 @@ class PlanGenerator:
             return 1
         return max(2, math.ceil(bedrooms / 2) + 1)
 
-    def build_svg(self, spec: dict[str, Any]) -> str:
-        """Public compatibility method used by the test suite and API."""
-        return self._build_svg(spec)
+    def build_svg(self, spec: dict[str, Any], visual_style: str = "presentation") -> str:
+        """Build a presentation-colour or clean technical concept SVG."""
+        return self._build_svg(spec, "technical" if visual_style == "technical" else "presentation")
 
-    def _build_svg(self, spec: dict[str, Any]) -> str:
+    def build_technical_svg(self, spec: dict[str, Any]) -> str:
+        """Return the clean CAD-style visual treatment for the same concept plate."""
+        return self._build_svg(spec, "technical")
+
+    def _build_svg(self, spec: dict[str, Any], visual_style: str = "presentation") -> str:
         """Build a presentation-quality concept plan with clear visual hierarchy.
 
         The output is a diagrammatic design-study sheet: it communicates spatial
@@ -115,6 +121,7 @@ class PlanGenerator:
         members, accessibility clearances, services coordination or setting-out
         accuracy.
         """
+        technical = visual_style == "technical"
         rooms = self._layout_rooms(spec)
         floors = self._positive_int(spec.get("floors"), default=1, minimum=1, maximum=50)
         building_type = str(spec.get("building_type") or "Building").replace("_", " ").title()
@@ -179,10 +186,18 @@ class PlanGenerator:
           .door { stroke: #8a6043; stroke-width: 2; fill: none; vector-effect: non-scaling-stroke; }
           .furniture { stroke: #83988d; stroke-width: 1; fill: #ffffff; fill-opacity: .65; }
         </style>""")
-        element("rect", {"x": "0", "y": "0", "width": str(canvas_width), "height": str(canvas_height), "fill": "#f8fbf8"})
-        element("rect", {"x": "26", "y": "26", "width": str(canvas_width - 52), "height": str(canvas_height - 52), "rx": "18", "fill": "#ffffff", "stroke": "#dce9e1"})
-        element("rect", {"x": "56", "y": "122", "width": str(canvas_width - 112), "height": str(canvas_height - 212), "rx": "12", "fill": "url(#grid)", "stroke": "#e3ede6"})
-        element("text", {"x": "58", "y": "70", "class": "sheet-title"}, f"{building_type} · CONCEPT PLAN")
+        if technical:
+            parts.append("""<style>
+              .room { stroke: #171717; stroke-width: 1.35; } .inner-wall { stroke: #171717; stroke-width: 2.4; }
+              .outer-wall { stroke: #080808; stroke-width: 8; } .room-label { fill: #111111; }
+              .room-area, .dimension, .note, .sheet-subtitle { fill: #333333; }
+              .window { stroke: #111111; stroke-width: 4; } .door { stroke: #111111; stroke-width: 1.65; }
+              .furniture { stroke: #777777; fill: #ffffff; fill-opacity: .25; }
+            </style>""")
+        element("rect", {"x": "0", "y": "0", "width": str(canvas_width), "height": str(canvas_height), "fill": "#ffffff" if technical else "#f8fbf8"})
+        element("rect", {"x": "26", "y": "26", "width": str(canvas_width - 52), "height": str(canvas_height - 52), "rx": "4" if technical else "18", "fill": "#ffffff", "stroke": "#aab0ad" if technical else "#dce9e1"})
+        element("rect", {"x": "56", "y": "122", "width": str(canvas_width - 112), "height": str(canvas_height - 212), "rx": "2" if technical else "12", "fill": "url(#grid)", "stroke": "#c5cbc7" if technical else "#e3ede6"})
+        element("text", {"x": "58", "y": "70", "class": "sheet-title"}, f"{building_type} · {'TECHNICAL' if technical else 'PRESENTATION'} CONCEPT PLAN")
         template_note = " · Ghana-focused planning template · not a code or permit approval" if spec.get("planning_guidance") else ""
         style_brief = str(spec.get("concept_style") or "").strip().replace("_", " ")[:28]
         style_note = f"  /  STYLE BRIEF: {style_brief.upper()}" if style_brief else ""
@@ -205,7 +220,7 @@ class PlanGenerator:
             width = float(room["w"]) * scale
             height = float(room["h"]) * scale
             room_pixels.append({"room": room, "x": x, "y": y, "width": width, "height": height})
-            element("rect", {"x": f"{x:.2f}", "y": f"{y:.2f}", "width": f"{width:.2f}", "height": f"{height:.2f}", "rx": "2", "class": "room", "fill": self._room_color(room["type"]), "filter": "url(#shadow)"})
+            element("rect", {"x": f"{x:.2f}", "y": f"{y:.2f}", "width": f"{width:.2f}", "height": f"{height:.2f}", "rx": "0" if technical else "2", "class": "room", "fill": "#ffffff" if technical else self._room_color(room["type"]), "filter": "" if technical else "url(#shadow)"})
             # Interior demarcation line reinforces room boundaries when colours are similar.
             element("rect", {"x": f"{x + 2:.2f}", "y": f"{y + 2:.2f}", "width": f"{max(width - 4, 1):.2f}", "height": f"{max(height - 4, 1):.2f}", "rx": "1", "fill": "none", "class": "inner-wall"})
             label_x, label_y = x + width / 2, y + height / 2

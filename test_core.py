@@ -65,6 +65,24 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertIn('class="door"', svg)
         self.assertIn('class="window"', svg)
 
+    def test_technical_and_presentation_sheets_are_distinct_valid_concept_views(self):
+        generator = PlanGenerator()
+        spec = {
+            "building_type": "residential", "location": "Kumasi", "floors": 2,
+            "area_sqm": 190, "bedrooms": 3, "bathrooms": 2,
+            "design_studio": {"active_floor": 2},
+        }
+        presentation = generator.build_svg(spec, visual_style="presentation")
+        technical = generator.build_technical_svg(spec)
+        ElementTree.fromstring(presentation)
+        ElementTree.fromstring(technical)
+        self.assertIn("PRESENTATION CONCEPT PLAN", presentation)
+        self.assertIn("TECHNICAL CONCEPT PLAN", technical)
+        self.assertIn("LEVEL 2 OF 2", technical)
+        self.assertIn('class="outer-wall"', technical)
+        self.assertIn('fill="#ffffff"', technical)
+        self.assertNotEqual(presentation, technical)
+
     def test_ghana_focused_residential_template_is_explicitly_opt_in(self):
         generator = PlanGenerator()
         source = {
@@ -172,6 +190,28 @@ class ConstructionCoreTests(unittest.TestCase):
                 index_accessor = document["accessors"][primitive["indices"]]
                 self.assertEqual(index_accessor["componentType"], 5125)
                 self.assertEqual(index_accessor["count"], 36)
+
+    def test_dollhouse_glb_is_valid_and_contains_room_aware_cues(self):
+        with tempfile.TemporaryDirectory() as directory:
+            generator = Model3DGenerator(directory)
+            path = generator.generate_dollhouse_model({
+                "floors": 2, "area_sqm": 180, "bedrooms": 3, "bathrooms": 2,
+                "building_type": "residential", "location": "Kumasi",
+            }, "dollhouse-test")
+            with open(path, "rb") as source:
+                data = source.read()
+        magic, version, length = struct.unpack("<4sII", data[:12])
+        self.assertEqual((magic, version, length), (b"glTF", 2, len(data)))
+        json_length, json_type = struct.unpack("<II", data[12:20])
+        self.assertEqual(json_type, 0x4E4F534A)
+        document = json.loads(data[20:20 + json_length].decode("utf-8"))
+        names = [node["name"] for node in document["nodes"]]
+        self.assertIn("Floor 1 dollhouse slab", names)
+        self.assertIn("Floor 2 dollhouse slab", names)
+        self.assertTrue(any("bed cue" in name for name in names))
+        self.assertTrue(any("rear room wall" in name for name in names))
+        self.assertIn("early-planning cutaway floor-programme visualization only", document["asset"]["extras"]["buildwise"]["modelPurpose"])
+        self.assertTrue(all("target" in item for item in document["bufferViews"]))
 
     def test_box_geometry_uses_outward_normals_and_triangles(self):
         import numpy as np

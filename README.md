@@ -1,6 +1,6 @@
 # Buildwise GH — Construction AI MVP
 
-A Ghana-focused, early-stage construction planning workspace. A user writes a short building brief and receives a structured concept specification, schematic SVG room plan, downloadable GLB massing model, first-pass schedule, indicative GHS cost allocation and preliminary screening notes.
+A Ghana-focused, early-stage construction planning workspace. A user writes a short building brief and receives a structured concept specification, selectable technical/presentation SVG floor-plan studies, original cutaway/exterior GLB concept views, a first-pass schedule, indicative GHS cost allocation and preliminary screening notes.
 
 > **Important:** This is a software MVP for early planning only. It does not produce architectural or structural drawings, construction quantities, a professional cost estimate, permit approval or confirmation of legal/code compliance. Have designs and prices checked by qualified local professionals and the relevant authorities before making decisions or building.
 
@@ -10,8 +10,8 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 - Legacy authenticated API routes remain only for existing private project records; they are not exposed through the public frontend.
 - SQLite locally and PostgreSQL on Render.
 - Lightweight, deterministic brief parser — no large model download or paid AI API key. Public and private concept briefs accept up to 75,000 characters (including a detailed 5,000-word brief); the original brief remains available in the concept response and professional handoff.
-- Generated schematic SVG floor plan, interactive in-browser GLB massing preview, downloadable glTF 2.0 binary (`.glb`) model, and CSV estimate export.
-- Multi-storey concepts use separate selectable 2D floor plates (Ground, Level 2, etc.) rather than presenting one floor as the whole building; every plate remains an approximate concept study.
+- Selectable original visual studies: a clean technical CAD-style SVG sheet or a coloured presentation SVG sheet, plus an interactive open-roof dollhouse GLB or exterior/elevation massing GLB. Both 3D studies are downloadable glTF 2.0 binaries (`.glb`); all views remain early-stage concepts, not construction drawings.
+- Multi-storey concepts use separate selectable 2D floor plates (Ground, Level 2, etc.) rather than presenting one floor as the whole building; each selected floor can be reviewed in either sheet style.
 - Indicative sequential project schedule with a simple seasonal planning allowance.
 - Preliminary rule-screening output with clear non-approval disclaimers.
 - High-level GHS estimate with an editable starter rate table and visible uncertainty range.
@@ -76,13 +76,13 @@ Copy `.env.example` to `.env` and set:
 - `GET /api/auth/me` — current account (`Authorization: Bearer ...`).
 - `POST /api/public/project/generate` — generate a no-login, non-persistent concept with time-limited public artifact URLs. Accepts `market_focus` of `ghana_context`, `global_modern` or `balanced` (or the compatibility field `target_market` using Ghana, international or both) and returns transparent briefing directions alongside the concept.
 - `POST /api/v2/generate/market-variants` — return the same clean-room briefing-direction comparison without creating a plan, artifact or project record. It never returns a market score, forecast, code conclusion or approval.
-- `GET /api/public/artifacts/{token}/{plan.svg|model.glb|schedule.json}` — retrieve one temporary public artifact while its unguessable link is valid.
+- `GET /api/public/artifacts/{token}/{plan.svg|plan-technical.svg|plan-floor-N.svg|plan-technical-floor-N.svg|model.glb|dollhouse.glb|schedule.json}` — retrieve one temporary public artifact while its unguessable link is valid.
 - `POST /api/project/generate` — generate and save a project concept (authenticated legacy/private API).
 - `GET /api/projects` and `GET /api/projects/{id}` — list/open your projects (authenticated legacy/private API).
 - `DELETE /api/projects/{id}` — delete one of your projects (authenticated).
 - `GET /api/projects/{id}/artifacts/cost.csv` — download an indicative cost allocation (authenticated).
-- `GET /api/projects/{id}/artifacts/plan.svg` — generated schematic SVG (authenticated).
-- `GET /api/projects/{id}/artifacts/model.glb` — generated massing model (authenticated).
+- `GET /api/projects/{id}/artifacts/plan.svg?floor=N&style=presentation|technical` — generated floor-specific SVG concept sheet (authenticated).
+- `GET /api/projects/{id}/artifacts/model.glb` and `GET /api/projects/{id}/artifacts/dollhouse.glb` — original exterior and open-roof cutaway concept models (authenticated).
 - `GET /api/projects/{id}/artifacts/schedule.json` — generated schedule (authenticated).
 - `GET /api/projects/{id}/workbench` — original Design Studio, QTO, energy and delivery summary (authenticated).
 - `PUT /api/projects/{id}/design-studio` — save bounded editable room blocks (authenticated).
