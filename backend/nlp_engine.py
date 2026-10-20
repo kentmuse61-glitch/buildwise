@@ -69,9 +69,9 @@ def _parse_budget(text: str) -> float | None:
 
 def parse_construction_request(text: str) -> dict[str, Any]:
     """Parse a short natural-language brief into a conservative concept spec."""
-    # Retain enough normalized source text for briefs longer than 1,500 words
+    # Retain enough normalized source text for a detailed 5,000-word brief
     # while keeping anonymous API and artifact processing bounded.
-    clean_text = " ".join((text or "").split())[:20_000]
+    clean_text = " ".join((text or "").split())[:75_000]
     lowered = clean_text.lower()
 
     spec: dict[str, Any] = {
@@ -106,6 +106,18 @@ def parse_construction_request(text: str) -> dict[str, Any]:
     bedroom_count = _count(lowered, r"\b(\d+)\s*[- ]*\s*(?:bedrooms?|beds?|br)\b")
     bathroom_count = _count(lowered, r"\b(\d+)\s*[- ]*\s*(?:bathrooms?|baths?|wcs?)\b")
     explicit_rooms = _count(lowered, r"\b(\d+)\s*(?:total\s+)?rooms?\b")
+    # Briefs often spell quantities out in long narrative descriptions. Support
+    # the bounded vocabulary used for floor count without guessing larger values.
+    if bedroom_count is None:
+        for word, value in _NUMBER_WORDS.items():
+            if re.search(rf"\b{word}\s*[- ]*\s*(?:bedrooms?|beds?|br)\b", lowered):
+                bedroom_count = value
+                break
+    if bathroom_count is None:
+        for word, value in _NUMBER_WORDS.items():
+            if re.search(rf"\b{word}\s*[- ]*\s*(?:bathrooms?|baths?|wcs?)\b", lowered):
+                bathroom_count = value
+                break
 
     if bedroom_count is not None:
         spec["bedrooms"] = min(max(bedroom_count, 0), 40)

@@ -9,7 +9,7 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 - No login or registration page is included in the public application. Visitors enter Guest Concept Mode immediately and can generate a temporary browser-session concept without creating an account. Its unguessable SVG/GLB/schedule links expire after one hour or on a service restart.
 - Legacy authenticated API routes remain only for existing private project records; they are not exposed through the public frontend.
 - SQLite locally and PostgreSQL on Render.
-- Lightweight, deterministic brief parser — no large model download or paid AI API key. Public and private concept briefs accept up to 20,000 characters (typically over 1,500 words); the original brief remains available in the concept response and professional handoff.
+- Lightweight, deterministic brief parser — no large model download or paid AI API key. Public and private concept briefs accept up to 75,000 characters (including a detailed 5,000-word brief); the original brief remains available in the concept response and professional handoff.
 - Generated schematic SVG floor plan, interactive in-browser GLB massing preview, downloadable glTF 2.0 binary (`.glb`) model, and CSV estimate export.
 - Multi-storey concepts use separate selectable 2D floor plates (Ground, Level 2, etc.) rather than presenting one floor as the whole building; every plate remains an approximate concept study.
 - Indicative sequential project schedule with a simple seasonal planning allowance.

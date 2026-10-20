@@ -67,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.2.7",
+    version="1.2.8",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
@@ -143,7 +143,7 @@ class ProfessionalHandoffRequest(BaseModel):
 
 
 class ProjectRequest(BaseModel):
-    description: str = Field(min_length=10, max_length=20_000)
+    description: str = Field(min_length=10, max_length=75_000)
     name: str | None = Field(default=None, max_length=120)
     location: str | None = Field(default=None, max_length=100)
     budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
@@ -168,7 +168,7 @@ class ProjectRequest(BaseModel):
 class MarketVariantRequest(BaseModel):
     """Bounded public input for review-first client-briefing directions."""
 
-    description: str = Field(min_length=10, max_length=20_000)
+    description: str = Field(min_length=10, max_length=75_000)
     location: str | None = Field(default=None, max_length=100)
     budget: float | None = Field(default=None, gt=0, le=1_000_000_000_000)
     apply_bathroom_template: bool = False

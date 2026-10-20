@@ -28,12 +28,17 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertEqual(spec["budget_constraint"], 800000)
         self.assertIn("solar_power", spec["special_features"])
 
-    def test_parser_retains_a_brief_longer_than_1500_words(self):
-        detail = "context " * 1_520
-        source = f"A 3-storey apartment in Kumasi with 540 sqm, 6 bedrooms and 6 bathrooms. {detail} Solar power and a balcony are required."
-        self.assertGreater(len(source.split()), 1_500)
+    def test_parser_retains_an_exact_5000_word_brief(self):
+        opening = "A three storey apartment in Kumasi with 540 sqm six bedrooms and six bathrooms requires careful concept review".split()
+        closing = "Solar power and a balcony are essential final requirements".split()
+        source_words = opening + (["context"] * (5_000 - len(opening) - len(closing))) + closing
+        source = " ".join(source_words)
+        self.assertEqual(len(source.split()), 5_000)
+        self.assertLess(len(source), 75_000)
         spec = parse_construction_request(source)
-        self.assertIn("Solar power and a balcony are required.", spec["raw_text"])
+        self.assertEqual(spec["raw_text"], source)
+        self.assertEqual(spec["bedrooms"], 6)
+        self.assertEqual(spec["bathrooms"], 6)
         self.assertIn("solar_power", spec["special_features"])
         self.assertIn("balcony", spec["special_features"])
 
