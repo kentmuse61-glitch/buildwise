@@ -180,18 +180,22 @@ class ConstructionCoreTests(unittest.TestCase):
             self.assertIn("Floor 1 front glazing panel 1", node_names)
             self.assertIn("Floor 1 east glazing panel 1", node_names)
             self.assertIn("Roof overhang", node_names)
-            self.assertGreaterEqual(len(document["materials"]), 6)
+            self.assertIn("Pitched concept roof", node_names)
+            self.assertGreaterEqual(len(document["materials"]), 7)
             self.assertIn("Blue-grey glazing", [material["name"] for material in document["materials"]])
             self.assertEqual(document["asset"]["extras"]["buildwise"]["modelPurpose"], "early-planning concept massing only")
             self.assertTrue(all("target" in buffer_view for buffer_view in document["bufferViews"]))
             for mesh in document["meshes"]:
                 primitive = mesh["primitives"][0]
                 self.assertEqual(set(primitive["attributes"]), {"POSITION", "NORMAL"})
-                self.assertEqual(document["accessors"][primitive["attributes"]["POSITION"]]["count"], 24)
-                self.assertEqual(document["accessors"][primitive["attributes"]["NORMAL"]]["count"], 24)
+                position_count = document["accessors"][primitive["attributes"]["POSITION"]]["count"]
+                normal_count = document["accessors"][primitive["attributes"]["NORMAL"]]["count"]
                 index_accessor = document["accessors"][primitive["indices"]]
                 self.assertEqual(index_accessor["componentType"], 5125)
-                self.assertEqual(index_accessor["count"], 36)
+                if mesh["name"] == "Pitched concept roof":
+                    self.assertEqual((position_count, normal_count, index_accessor["count"]), (12, 12, 12))
+                else:
+                    self.assertEqual((position_count, normal_count, index_accessor["count"]), (24, 24, 36))
 
     def test_dollhouse_glb_is_valid_and_contains_room_aware_cues(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -289,20 +289,42 @@ class Model3DGenerator:
                 add_box(f"{face_name} balcony slab", 1, -width * 0.30, balcony_level, slab_z1, width * 0.30, balcony_level + 0.16, slab_z2)
                 add_box(f"{face_name} balcony glass rail", 3, -width * 0.30, rail_y1, rail_z1, width * 0.30, rail_y2, rail_z2)
 
-        # Flat roof, overhang and parapet give a clear, climate-responsive silhouette.
+        # The brief controls a recognisable roof silhouette. Pitched concepts get
+        # an original four-slope roof mesh; flat-roof concepts retain a parapet.
+        # These are presentation forms only, never truss, drainage or wind design.
         roof_base = total_height + 0.22
-        add_box("Roof overhang", 2, -half_width - 0.28, roof_base, -half_depth - 0.28, half_width + 0.28, roof_base + 0.18, half_depth + 0.28)
-        parapet_h = 0.46
-        parapet_t = 0.16
-        add_box("Front roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.28, half_width + 0.28, roof_base + 0.18 + parapet_h, -half_depth - 0.28 + parapet_t)
-        add_box("Rear roof parapet", 2, -half_width - 0.28, roof_base + 0.18, half_depth + 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.28)
-        add_box("West roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.12, -half_width - 0.12, roof_base + 0.18 + parapet_h, half_depth + 0.12)
-        add_box("East roof parapet", 2, half_width + 0.12, roof_base + 0.18, -half_depth - 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.12)
+        roof_type = str(spec.get("roof_type") or "iron_sheet").lower()
+        pitched_roof = roof_type not in {"flat", "flat_roof", "concrete_slab", "terrace"}
+        roof_top = roof_base + 0.22
+        if pitched_roof:
+            eave = roof_base + 0.16
+            ridge = eave + min(1.35, max(.62, min(width, depth) * .14))
+            roof_positions, roof_normals, roof_indices = self._pyramid_roof_geometry(
+                -half_width - .34, -half_depth - .34, half_width + .34, half_depth + .34, eave, ridge
+            )
+            meshes.append({
+                "name": "Pitched concept roof",
+                "material": 7,
+                "positions": roof_positions,
+                "normals": roof_normals,
+                "indices": roof_indices,
+            })
+            add_box("Roof overhang", 2, -half_width - .38, roof_base, -half_depth - .38, half_width + .38, roof_base + .14, half_depth + .38)
+            roof_top = ridge
+        else:
+            add_box("Roof overhang", 2, -half_width - 0.28, roof_base, -half_depth - 0.28, half_width + 0.28, roof_base + 0.18, half_depth + 0.28)
+            parapet_h = 0.46
+            parapet_t = 0.16
+            add_box("Front roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.28, half_width + 0.28, roof_base + 0.18 + parapet_h, -half_depth - 0.28 + parapet_t)
+            add_box("Rear roof parapet", 2, -half_width - 0.28, roof_base + 0.18, half_depth + 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.28)
+            add_box("West roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.12, -half_width - 0.12, roof_base + 0.18 + parapet_h, half_depth + 0.12)
+            add_box("East roof parapet", 2, half_width + 0.12, roof_base + 0.18, -half_depth - 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.12)
+            roof_top = roof_base + .20
 
         # Buildwise-owned solar/terrace cues make feature-driven exterior concepts
         # more legible without pretending to size a PV system or roof structure.
         if "solar_power" in features:
-            panel_y = roof_base + 0.20
+            panel_y = roof_top + 0.035
             panel_w = min(1.05, max(.72, width / 8))
             panel_d = min(1.62, max(1.05, depth / 4))
             for row in range(2):
@@ -345,7 +367,43 @@ class Model3DGenerator:
             {"name": "Timber accent", "baseColorFactor": [0.45, 0.23, 0.12, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.72},
             {"name": "Landscape base", "baseColorFactor": [0.31, 0.47, 0.31, 1.0], "metallicFactor": 0.0, "roughnessFactor": 1.0},
             {"name": "Solar concept panel", "baseColorFactor": [0.025, 0.10, 0.19, 1.0], "metallicFactor": 0.55, "roughnessFactor": 0.25},
+            {"name": "Pitched roof concept", "baseColorFactor": [0.39, 0.19, 0.10, 1.0], "metallicFactor": 0.05, "roughnessFactor": 0.82},
         ]
+
+    @staticmethod
+    def _pyramid_roof_geometry(
+        x1: float, z1: float, x2: float, z2: float, eave_y: float, ridge_y: float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return an original four-slope roof mesh with outward face normals."""
+        if not (x2 > x1 and z2 > z1 and ridge_y > eave_y):
+            raise ValueError("Pitched roof bounds must be positive")
+        centre = np.asarray(((x1 + x2) / 2, ridge_y, (z1 + z2) / 2), dtype=np.float32)
+        corners = [
+            np.asarray((x1, eave_y, z1), dtype=np.float32),
+            np.asarray((x2, eave_y, z1), dtype=np.float32),
+            np.asarray((x2, eave_y, z2), dtype=np.float32),
+            np.asarray((x1, eave_y, z2), dtype=np.float32),
+        ]
+        positions: list[np.ndarray] = []
+        normals: list[np.ndarray] = []
+        for index in range(4):
+            triangle = [corners[index], corners[(index + 1) % 4], centre]
+            normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
+            horizontal_out = ((triangle[0] + triangle[1] + triangle[2]) / 3) - np.asarray((0.0, ridge_y, 0.0), dtype=np.float32)
+            if float(np.dot(normal[[0, 2]], horizontal_out[[0, 2]])) < 0:
+                triangle[0], triangle[1] = triangle[1], triangle[0]
+                normal = -normal
+            length = float(np.linalg.norm(normal))
+            if length <= 0 or not np.isfinite(length):
+                raise ValueError("Pitched roof normal is invalid")
+            normal = normal / length
+            positions.extend(triangle)
+            normals.extend([normal, normal, normal])
+        return (
+            np.asarray(positions, dtype=np.float32),
+            np.asarray(normals, dtype=np.float32),
+            np.arange(12, dtype=np.uint32),
+        )
 
     @staticmethod
     def _box_geometry(
