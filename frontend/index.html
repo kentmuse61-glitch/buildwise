@@ -12,67 +12,6 @@
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <div id="auth-screen" class="auth-screen hidden" aria-hidden="true">
-    <div class="auth-showcase">
-      <div class="brand brand-large">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span class="brand-name">Buildwise <b>GH</b><small>CONSTRUCTION AI</small></span>
-      </div>
-      <div class="auth-message">
-        <span class="eyebrow eyebrow-light">IDEA → CONCEPT → PLAN</span>
-        <h1>Build with a clearer starting point.</h1>
-        <p>Turn a short brief into a Ghana-focused concept plan, a rough cost view and a first-pass project timeline.</p>
-      </div>
-      <div class="auth-visual" aria-hidden="true">
-        <div class="visual-sun"></div>
-        <div class="visual-building building-back"><i></i><i></i><i></i><i></i></div>
-        <div class="visual-building building-front"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <div class="visual-ground"></div>
-        <div class="visual-caption"><span class="visual-dot"></span> A practical first sketch, not a final design</div>
-      </div>
-      <div class="auth-footnote">Built for early planning in Ghana <span>·</span> GHS estimates <span>·</span> Concept-level outputs</div>
-    </div>
-
-    <div class="auth-side">
-      <div class="auth-card">
-        <div class="auth-card-brand brand">
-          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span class="brand-name">Buildwise <b>GH</b><small>CONSTRUCTION AI</small></span>
-        </div>
-        <div class="auth-intro">
-          <span class="eyebrow" id="auth-eyebrow">YOUR PROJECT WORKSPACE</span>
-          <h2 id="auth-heading">Welcome back</h2>
-          <p id="auth-subheading">Sign in to see your projects and continue planning.</p>
-        </div>
-        <form id="auth-form" autocomplete="on">
-          <label class="form-field" id="company-field-wrap" hidden>
-            <span>Company name <small>Optional</small></span>
-            <input id="auth-company" type="text" maxlength="200" autocomplete="organization" placeholder="Your company">
-          </label>
-          <label class="form-field" id="email-field-wrap" hidden>
-            <span>Email address</span>
-            <input id="auth-email" type="email" maxlength="100" autocomplete="email" placeholder="you@example.com">
-          </label>
-          <label class="form-field">
-            <span>Username</span>
-            <input id="auth-username" name="username" type="text" minlength="3" maxlength="50" required autocomplete="username" placeholder="Your username">
-          </label>
-          <label class="form-field">
-            <span>Password</span>
-            <input id="auth-password" name="password" type="password" minlength="8" maxlength="72" required autocomplete="current-password" placeholder="At least 8 characters">
-          </label>
-          <div id="auth-error" class="form-error" role="alert" hidden></div>
-          <button id="auth-submit" class="button button-primary button-full" type="submit">Sign in <span aria-hidden="true">→</span></button>
-        </form>
-        <div class="auth-switch-row">
-          <span id="auth-switch-label">New to Buildwise?</span>
-          <button id="auth-switch" class="text-button" type="button">Create an account</button>
-        </div>
-        <p class="auth-disclaimer">Your projects are private to your account. Estimates and layouts are early planning aids, not professional advice.</p>
-      </div>
-    </div>
-  </div>
-
   <div id="workspace" class="workspace">
     <aside id="sidebar" class="sidebar">
       <a class="brand sidebar-brand" href="#overview" aria-label="Buildwise GH home">
@@ -89,9 +28,8 @@
       <div class="sidebar-bottom">
         <div class="sidebar-note"><span class="note-icon">✦</span><div><strong>Concept-stage tools</strong><p>Review every output with qualified local professionals.</p></div></div>
         <div class="profile-row">
-          <div id="user-avatar" class="avatar">B</div>
-          <div class="profile-copy"><strong id="user-label">Your account</strong><span>Ghana workspace</span></div>
-          <button id="logout-btn" class="icon-button logout-button" type="button" aria-label="Sign out" title="Sign out">↗</button>
+          <div id="user-avatar" class="avatar">G</div>
+          <div class="profile-copy"><strong id="user-label">Guest concept mode</strong><span>Temporary browser session</span></div>
         </div>
       </div>
     </aside>

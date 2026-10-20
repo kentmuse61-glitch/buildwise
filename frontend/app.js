@@ -1,11 +1,9 @@
 "use strict";
 
 const state = {
-  token: sessionStorage.getItem("buildwise_token"),
-  user: null,
+  user: { username: "Guest concept mode" },
   projects: [],
   view: "overview",
-  authMode: "login",
   currentProject: null,
 };
 
@@ -51,7 +49,6 @@ async function api(path, options = {}) {
     headers.set("Content-Type", "application/json");
     init.body = JSON.stringify(init.body);
   }
-  if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
   init.headers = headers;
 
   let response;
@@ -71,11 +68,6 @@ async function api(path, options = {}) {
       const body = await response.text().catch(() => "");
       if (body && body.length < 180) message = body;
     }
-    if (response.status === 401 && state.token) {
-      clearSession();
-      state.user = { username: "Guest concept mode" };
-      showWorkspace();
-    }
     throw new Error(message);
   }
   if (response.status === 204) return null;
@@ -83,63 +75,18 @@ async function api(path, options = {}) {
   return response.blob();
 }
 
-function clearSession() {
-  state.token = null;
-  state.user = null;
-  state.projects = [];
-  sessionStorage.removeItem("buildwise_token");
-}
-
-function showAuth(mode = "login") {
-  state.authMode = mode;
-  $("#workspace").classList.add("hidden");
-  $("#auth-screen").classList.remove("hidden");
-  const registering = mode === "register";
-  $("#auth-heading").textContent = registering ? "Create your account" : "Welcome back";
-  $("#auth-subheading").textContent = registering
-    ? "Set up a private workspace for your project concepts."
-    : "Sign in to see your projects and continue planning.";
-  $("#auth-eyebrow").textContent = registering ? "START YOUR WORKSPACE" : "YOUR PROJECT WORKSPACE";
-  $("#auth-submit").innerHTML = registering ? 'Create account <span aria-hidden="true">→</span>' : 'Sign in <span aria-hidden="true">→</span>';
-  $("#auth-switch-label").textContent = registering ? "Already have an account?" : "New to Buildwise?";
-  $("#auth-switch").textContent = registering ? "Sign in" : "Create an account";
-  $("#email-field-wrap").hidden = !registering;
-  $("#company-field-wrap").hidden = !registering;
-  $("#auth-email").required = registering;
-  $("#auth-password").autocomplete = registering ? "new-password" : "current-password";
-  $("#auth-error").hidden = true;
-  $("#auth-error").textContent = "";
-}
-
 function showWorkspace() {
-  $("#auth-screen").classList.add("hidden");
-  $("#workspace").classList.remove("hidden");
-  const isGuest = !state.token;
-  const username = state.user?.username || (isGuest ? "Guest concept mode" : "Your account");
+  const username = "Guest concept mode";
   $("#user-label").textContent = username;
-  $("#user-avatar").textContent = username.slice(0, 1).toUpperCase();
-  $("#logout-btn").classList.toggle("hidden", isGuest);
+  $("#user-avatar").textContent = "G";
   updateNavCount();
   setView("overview");
 }
 
-async function boot() {
-  if (!state.token) {
-    state.user = { username: "Guest concept mode" };
-    state.projects = [];
-    showWorkspace();
-    return;
-  }
-  try {
-    state.user = await api("/api/auth/me");
-    const result = await api("/api/projects");
-    state.projects = result.projects || [];
-    showWorkspace();
-  } catch (error) {
-    clearSession();
-    state.user = { username: "Guest concept mode" };
-    showWorkspace();
-  }
+function boot() {
+  state.user = { username: "Guest concept mode" };
+  state.projects = [];
+  showWorkspace();
 }
 
 function updateNavCount() {
@@ -153,7 +100,7 @@ function setView(view) {
   const titles = {
     overview: ["YOUR WORKSPACE", "Overview"],
     create: ["PROJECT PLANNING", "New concept"],
-    projects: ["YOUR WORKSPACE", "My projects"],
+    projects: ["TEMPORARY SESSION", "Session concepts"],
     contractors: ["LOCAL DIRECTORY", "Contractor directory"],
   };
   const [eyebrow, title] = titles[view] || titles.overview;
@@ -202,7 +149,7 @@ function overviewMarkup() {
       <button class="button" type="button" data-view="create">＋ Start a concept</button>
     </section>
     <section class="stats-grid" aria-label="Project summary">
-      <article class="stat-card"><div class="stat-head"><span>Saved concepts</span><span class="stat-icon">▤</span></div><div class="stat-value">${projects.length}</div><div class="stat-foot">Private to your workspace</div></article>
+      <article class="stat-card"><div class="stat-head"><span>Session concepts</span><span class="stat-icon">▤</span></div><div class="stat-value">${projects.length}</div><div class="stat-foot">Temporary in this browser</div></article>
       <article class="stat-card"><div class="stat-head"><span>Indicative portfolio</span><span class="stat-icon">₵</span></div><div class="stat-value">${money(totalEstimate)}</div><div class="stat-foot">Early estimates, not quotes</div></article>
       <article class="stat-card"><div class="stat-head"><span>Need professional review</span><span class="stat-icon">!</span></div><div class="stat-value">${needsReview}</div><div class="stat-foot">Every concept needs local validation</div></article>
       <article class="stat-card"><div class="stat-head"><span>Average floor area</span><span class="stat-icon">⌗</span></div><div class="stat-value">${avgArea.toLocaleString("en-GH")} <small style="font-size:12px;font-weight:650">m²</small></div><div class="stat-foot">Across saved concepts</div></article>
@@ -281,8 +228,7 @@ function initCreateForm() {
       if (Object.values(handoff).some((value) => value !== null && value !== "")) payload.handoff = handoff;
       if (projectName) payload.name = projectName;
       if (budgetValue) payload.budget = Number(budgetValue);
-      const endpoint = state.token ? "/api/project/generate" : "/api/public/project/generate";
-      const result = await api(endpoint, { method: "POST", body: payload });
+      const result = await api("/api/public/project/generate", { method: "POST", body: payload });
       state.projects = [result, ...state.projects.filter((project) => projectIdValue(project) !== projectIdValue(result))];
       updateNavCount();
       output.innerHTML = projectDetailMarkup(result, true);
@@ -299,12 +245,8 @@ function initCreateForm() {
 
 function projectsMarkup() {
   const projects = state.projects || [];
-  const guest = !state.token;
-  const kicker = guest ? "THIS BROWSER SESSION" : "YOUR SAVED WORK";
-  const description = guest
-    ? "Guest concepts are temporary and their generated links expire after one hour."
-    : "Concepts are saved to your account. Open one to view its schematic plan, estimate, timeline and downloadable 3D massing model.";
-  return `<div class="page-intro"><div><div class="page-kicker">${kicker}</div><h2>${guest ? "Temporary concepts" : "My projects"}</h2><p>${description}</p></div><button class="button button-primary" type="button" data-view="create">＋ New concept</button></div>${projects.length ? `<div class="project-grid">${projects.map(projectCard).join("")}</div>` : emptyMarkup("No concepts in this session", guest ? "Create a brief to generate a temporary concept without signing in." : "Create a project brief to save your first concept.", "Create a concept", "create")}`;
+  const description = "Guest concepts are temporary and their generated links expire after one hour.";
+  return `<div class="page-intro"><div><div class="page-kicker">THIS BROWSER SESSION</div><h2>Temporary concepts</h2><p>${description}</p></div><button class="button button-primary" type="button" data-view="create">＋ New concept</button></div>${projects.length ? `<div class="project-grid">${projects.map(projectCard).join("")}</div>` : emptyMarkup("No concepts in this session", "Create a brief to generate a temporary concept without signing in.", "Create a concept", "create")}`;
 }
 
 function projectDetailMarkup(project, embedded = false) {
@@ -730,50 +672,6 @@ async function deleteProject(projectId) {
     showToast(error.message, "error");
   }
 }
-
-$("#auth-switch").addEventListener("click", () => showAuth(state.authMode === "login" ? "register" : "login"));
-$("#auth-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const button = $("#auth-submit");
-  const errorNode = $("#auth-error");
-  const username = $("#auth-username").value.trim();
-  const password = $("#auth-password").value;
-  button.disabled = true;
-  errorNode.hidden = true;
-  try {
-    if (state.authMode === "register") {
-      await api("/api/auth/register", {
-        method: "POST",
-        body: {
-          username,
-          password,
-          email: $("#auth-email").value.trim(),
-          company_name: $("#auth-company").value.trim(),
-          phone: "",
-        },
-      });
-    }
-    const loginResult = await api("/api/auth/login", { method: "POST", body: { username, password } });
-    state.token = loginResult.access_token;
-    sessionStorage.setItem("buildwise_token", state.token);
-    state.user = await api("/api/auth/me");
-    const result = await api("/api/projects");
-    state.projects = result.projects || [];
-    showWorkspace();
-    showToast(state.authMode === "register" ? "Account ready. Welcome to Buildwise GH." : "Welcome back.");
-  } catch (error) {
-    errorNode.textContent = error.message;
-    errorNode.hidden = false;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-$("#logout-btn").addEventListener("click", () => {
-  clearSession();
-  state.user = { username: "Guest concept mode" };
-  showWorkspace();
-});
 
 $("#mobile-menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 

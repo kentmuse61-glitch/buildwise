@@ -6,8 +6,8 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 
 ## What's included
 
-- Public no-login concept mode: visitors can generate a temporary browser-session concept without creating an account. Its unguessable SVG/GLB/schedule links expire after one hour or on a service restart.
-- Legacy authenticated account/project API routes remain available for existing private project records, with optional project names and per-project deletion.
+- No login or registration page is included in the public application. Visitors enter Guest Concept Mode immediately and can generate a temporary browser-session concept without creating an account. Its unguessable SVG/GLB/schedule links expire after one hour or on a service restart.
+- Legacy authenticated API routes remain only for existing private project records; they are not exposed through the public frontend.
 - SQLite locally and PostgreSQL on Render.
 - Lightweight, deterministic brief parser — no large model download or paid AI API key.
 - Generated schematic SVG floor plan, interactive in-browser GLB massing preview, downloadable glTF 2.0 binary (`.glb`) model, and CSV estimate export.
