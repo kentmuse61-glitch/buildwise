@@ -25,6 +25,11 @@ function money(value) {
   return `GHS ${Math.round(amount).toLocaleString("en-GH")}`;
 }
 
+function conceptFloorCount(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(50, Math.max(1, Math.trunc(parsed))) : 1;
+}
+
 function shortDate(value) {
   if (!value) return "—";
   const date = new Date(value);
@@ -258,7 +263,7 @@ function projectDetailMarkup(project, embedded = false) {
   const id = projectIdValue(project);
   const isPublic = Boolean(project.is_public);
   const displayTypology = spec.project_typology === "apartment" ? "Apartment" : (spec.building_type || project.building_type || "Residential");
-  const floorCount = Math.min(50, Math.max(1, Number(spec.floors || project.floors || 1)));
+  const floorCount = conceptFloorCount(spec.floors || project.floors || 1);
   const configuredFloor = Number(spec.design_studio?.active_floor || 1);
   const initialPlanFloor = Math.min(floorCount, Math.max(1, Number.isFinite(configuredFloor) ? configuredFloor : 1));
   const floorPlanTabs = floorCount > 1 ? `<div id="plan-floor-tabs" class="plan-floor-tabs" role="group" aria-label="Choose a concept floor plan">${Array.from({ length: floorCount }, (_, index) => {
@@ -350,11 +355,11 @@ async function initProjectArtifacts(project) {
   }
   const planImage = $("#plan-image");
   const planLoading = $("#plan-loading");
-  const floorCount = Math.min(50, Math.max(1, Number(project.spec?.floors || project.floors || 1)));
+  const floorCount = conceptFloorCount(project.spec?.floors || project.floors || 1);
   const startingFloor = Math.min(floorCount, Math.max(1, Number(project.spec?.design_studio?.active_floor || 1)));
   const floorPlanUrls = Array.isArray(project.floor_plan_urls) ? project.floor_plan_urls : [];
   const planUrlForFloor = (floor) => {
-    if (isPublic) return floorPlanUrls[floor - 1] || (floor === 1 ? project.plan_url : "");
+    if (isPublic) return floorPlanUrls[floor - 1] || (project.plan_url ? project.plan_url.replace(/plan\.svg$/, `plan-floor-${floor}.svg`) : "");
     return `${artifactUrl("plan")}?floor=${encodeURIComponent(floor)}`;
   };
   let planRequestId = 0;
@@ -413,7 +418,7 @@ async function initProjectArtifacts(project) {
 
 function studioRoomRow(room, index, activeFloor) {
   const safeId = escapeHtml(room.id || `room-${index + 1}`);
-  return `<div class="studio-room-row" data-row-index="${Number(index)}"><input data-field="id" value="${safeId}" maxlength="64" aria-label="Room ID"><input data-field="label" value="${escapeHtml(room.label || `Room ${index + 1}`)}" maxlength="60" aria-label="Room name"><input data-field="room_type" value="${escapeHtml(room.type || room.room_type || "room")}" maxlength="40" aria-label="Room type"><input data-field="floor" type="number" min="1" max="50" value="${Number(room.floor || activeFloor)}" aria-label="Floor"><input data-field="x" type="number" min="0" max="1000" step="0.1" value="${Number(room.x || 0)}" aria-label="X position metres"><input data-field="y" type="number" min="0" max="1000" step="0.1" value="${Number(room.y || 0)}" aria-label="Y position metres"><input data-field="width" type="number" min="0.5" max="200" step="0.1" value="${Number(room.w || room.width || 3)}" aria-label="Width metres"><input data-field="depth" type="number" min="0.5" max="200" step="0.1" value="${Number(room.h || room.depth || 3)}" aria-label="Depth metres"><button type="button" class="button button-quiet studio-remove">Remove</button></div>`;
+  return `<div class="studio-room-row" data-row-index="${Number(index)}"><input data-field="id" value="${safeId}" maxlength="64" aria-label="Room ID"><input data-field="label" value="${escapeHtml(room.label || `Room ${index + 1}`)}" maxlength="60" aria-label="Room name"><input data-field="room_type" value="${escapeHtml(room.type || room.room_type || "room")}" maxlength="40" aria-label="Room type"><input data-field="floor" type="number" value="${Number(activeFloor)}" aria-label="Floor" readonly aria-readonly="true"><input data-field="x" type="number" min="0" max="1000" step="0.1" value="${Number(room.x || 0)}" aria-label="X position metres"><input data-field="y" type="number" min="0" max="1000" step="0.1" value="${Number(room.y || 0)}" aria-label="Y position metres"><input data-field="width" type="number" min="0.5" max="200" step="0.1" value="${Number(room.w || room.width || 3)}" aria-label="Width metres"><input data-field="depth" type="number" min="0.5" max="200" step="0.1" value="${Number(room.h || room.depth || 3)}" aria-label="Depth metres"><button type="button" class="button button-quiet studio-remove">Remove</button></div>`;
 }
 
 function seismicWaveformMarkup(trace) {
@@ -442,12 +447,15 @@ function workbenchMarkup(data) {
   const vector = drawing.vector_inventory || null;
   const ifc = bim.ifc_manifest || null;
   const rooms = design.rooms || [];
+  const designFloors = conceptFloorCount(design.floors || 1);
+  const activeDesignFloor = Math.min(designFloors, Math.max(1, Number(design.active_floor) || 1));
+  const designFloorPicker = designFloors > 1 ? `<label class="form-field compact-field"><span>Edit concept level</span><select id="studio-design-floor">${Array.from({ length: designFloors }, (_, index) => { const floor = index + 1; return `<option value="${floor}" ${floor === activeDesignFloor ? "selected" : ""}>${floor === 1 ? "Ground floor" : `Level ${floor}`}</option>`; }).join("")}</select><small class="form-hint">Each level keeps its own room-block layout.</small></label>` : "";
   const qtoRows = (qto.items || []).map((item) => `<tr><td>${escapeHtml(item.item)}</td><td>${Number(item.quantity || 0).toLocaleString("en-GH")} ${escapeHtml(item.unit || "")}</td><td>${escapeHtml(item.basis || "")}</td></tr>`).join("");
   const phaseOptions = (delivery.phases || []).map((phase) => `<option value="${escapeHtml(phase.key)}">${escapeHtml(phase.phase)} · ${Number(phase.progress_percent || 0)}%</option>`).join("");
   const phaseRows = (delivery.phases || []).map((phase) => `<tr><td>${escapeHtml(phase.phase)}</td><td><span class="progress-value">${Number(phase.progress_percent || 0)}%</span></td><td>${escapeHtml(phase.status || "Not started")}</td></tr>`).join("");
   return `
     <div class="workbench-summary"><span class="meta-pill">Original Buildwise workflow</span><span class="meta-pill">${escapeHtml(data.status || "concept-review-required")}</span></div>
-    <details class="studio-details" open><summary><strong>Design Studio</strong> · editable room blocks for floor ${Number(design.active_floor || 1)}</summary><p class="form-hint">Adjust room blocks in metres, then save to regenerate the schematic SVG plan. This remains a conceptual layout, not a construction drawing.</p><form id="design-studio-form"><label class="form-field compact-field"><span>Concept variant name</span><input id="studio-variant-name" value="${escapeHtml(design.uses_custom_layout ? "Working concept" : "Starter concept")}" maxlength="80"></label><div class="studio-grid-head"><span>ID</span><span>Room</span><span>Type</span><span>Floor</span><span>X m</span><span>Y m</span><span>Width m</span><span>Depth m</span><span></span></div><div id="studio-room-list">${rooms.map((room, index) => studioRoomRow(room, index, design.active_floor || 1)).join("")}</div><div class="studio-actions"><button id="studio-add-room" type="button" class="button button-secondary">＋ Add room</button><button type="submit" class="button button-primary">Save concept layout</button></div></form></details>
+    <details class="studio-details" open><summary><strong>Design Studio</strong> · editable room blocks for level ${activeDesignFloor}</summary><p class="form-hint">Adjust one selected level at a time in metres, then save. Other saved levels remain intact. This remains a conceptual layout, not a construction drawing.</p><form id="design-studio-form">${designFloorPicker}<label class="form-field compact-field"><span>Concept variant name</span><input id="studio-variant-name" value="${escapeHtml(design.uses_custom_layout ? "Working concept" : "Starter concept")}" maxlength="80"></label><div class="studio-grid-head"><span>ID</span><span>Room</span><span>Type</span><span>Floor</span><span>X m</span><span>Y m</span><span>Width m</span><span>Depth m</span><span></span></div><div id="studio-room-list">${rooms.map((room, index) => studioRoomRow(room, index, design.active_floor || 1)).join("")}</div><div class="studio-actions"><button id="studio-add-room" type="button" class="button button-secondary">＋ Add room</button><button type="submit" class="button button-primary">Save concept layout</button></div></form></details>
     <details class="studio-details"><summary><strong>Transparent QTO & block modules</strong> · early-planning allowances</summary><table class="cost-table workbench-table"><thead><tr><th>Item</th><th>Quantity</th><th>Basis</th></tr></thead><tbody>${qtoRows}</tbody></table><div class="workbench-stats"><span><strong>${Number(blocks.estimated_blocks || 0).toLocaleString("en-GH")}</strong> conceptual blocks</span><span><strong>${Number(blocks.pallets_at_120_blocks || 0)}</strong> pallets at 120 blocks</span></div><div class="disclaimer-box">${escapeHtml(qto.disclaimer || "Review quantities professionally.")}</div></details>
     <details class="studio-details"><summary><strong>Energy planning</strong> · review-first prompts</summary><div class="workbench-stats"><span><strong>${Number(energy.concept_pv_capacity_range_kwp?.[0] || 0)}–${Number(energy.concept_pv_capacity_range_kwp?.[1] || 0)} kWp</strong> concept PV range</span><span>${energy.solar_requested_in_brief ? "Solar noted in the brief" : "Solar not specified in the brief"}</span></div><ul class="compliance-list">${(energy.planning_prompts || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><div class="disclaimer-box">${escapeHtml(energy.disclaimer || "Professional electrical review required.")}</div></details>
     <details class="studio-details"><summary><strong>Delivery tracker</strong> · user-entered progress</summary><div class="workbench-stats"><span><strong>${Number(delivery.overall_progress_percent || 0)}%</strong> duration-weighted progress</span><span>Not a quality, payment or completion certificate</span></div><table class="cost-table workbench-table"><thead><tr><th>Planned phase</th><th>Progress</th><th>Status</th></tr></thead><tbody>${phaseRows}</tbody></table><form id="delivery-progress-form" class="progress-form"><label class="form-field compact-field"><span>Phase</span><select id="delivery-phase">${phaseOptions}</select></label><label class="form-field compact-field"><span>Progress %</span><input id="delivery-percent" type="number" min="0" max="100" value="0"></label><label class="form-field compact-field"><span>Status</span><select id="delivery-status"><option>Not started</option><option>In progress</option><option>Blocked</option><option>Complete</option></select></label><label class="form-field compact-field"><span>Update note</span><input id="delivery-note" maxlength="800" placeholder="Optional site update"></label><button class="button button-primary" type="submit">Save progress</button></form><div class="disclaimer-box">${escapeHtml(delivery.disclaimer || "User-entered progress only.")}</div></details>
@@ -510,19 +518,25 @@ function renderStudioMarketDirections(payload) {
   host.innerHTML = `<div class="studio-market-heading"><span>CONCEPT DIRECTION</span><b>${escapeHtml(selected.label || "Balanced briefing")}</b></div><p>${escapeHtml(selected.tagline || "Review-first client briefing prompts.")}</p><ul>${prompts.map((prompt) => `<li>${escapeHtml(prompt)}</li>`).join("")}</ul><small>${escapeHtml(selected.not_claimed || "Professional review is required.")}</small>`;
 }
 
-async function initWorkbench(project) {
+async function initWorkbench(project, selectedFloor = null) {
   const panel = $("#workbench-panel");
   const id = projectIdValue(project);
   if (!panel || !id) return;
   try {
     const isPublic = Boolean(project.is_public);
-    const data = isPublic ? project.workbench : await api(`/api/projects/${id}/workbench`);
+    const floorQuery = selectedFloor ? `?floor=${encodeURIComponent(selectedFloor)}` : "";
+    const data = isPublic ? project.workbench : await api(`/api/projects/${id}/workbench${floorQuery}`);
     panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>${isPublic ? "Read-only temporary concept allowances. Create another concept to revise this public session." : "Editable concept geometry, transparent quantities and controlled progress records."}</p></div></div>${workbenchMarkup(data)}${isPublic ? `<div class="disclaimer-box">Guest concepts are not stored. Editing, delivery updates and review manifests require a future saved-workspace mode.</div>` : ""}`;
     renderStudioIntelligence(data);
     if (isPublic) {
       panel.querySelectorAll("form button, form input, form textarea, form select").forEach((element) => { element.disabled = true; });
       return;
     }
+    const floorPicker = $("#studio-design-floor", panel);
+    floorPicker?.addEventListener("change", async () => {
+      const nextFloor = conceptFloorCount(floorPicker.value);
+      await initWorkbench(project, nextFloor);
+    });
     initDesignStudio(project, data.design_studio || {});
     initDeliveryTracker(project);
     initReviewInputs(project);

@@ -103,18 +103,26 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertEqual(spec["concept_style"], "colonial-inspired")
         generator = PlanGenerator()
         floor_svgs = []
+        floor_rooms = []
         for floor in (1, 2, 3):
             floor_spec = {**spec, "design_studio": {"active_floor": floor}}
+            floor_rooms.append(generator.layout_rooms(floor_spec))
             svg = generator.build_svg(floor_spec)
             floor_svgs.append(svg)
             self.assertIn(f"LEVEL {floor} OF 3", svg)
             self.assertIn("Stair / vertical core", svg)
-            self.assertIn("Apartment A", svg)
+            self.assertIn("STYLE BRIEF: COLONIAL-INSPIRED", svg)
             ElementTree.fromstring(svg)
+        self.assertEqual(sum(1 for rooms in floor_rooms for room in rooms if room["type"].startswith("bedroom_")), 6)
+        self.assertEqual(sum(1 for rooms in floor_rooms for room in rooms if room["type"].startswith("bathroom_")), 6)
         self.assertIn("Entry lobby", floor_svgs[0])
         self.assertIn("Concept circulation", floor_svgs[1])
         self.assertIn("Balcony / outdoor space", floor_svgs[2])
         self.assertNotEqual(floor_svgs[0], floor_svgs[2])
+
+    def test_flat_roof_brief_is_not_misclassified_as_an_apartment(self):
+        spec = parse_construction_request("A 3-storey house in Kumasi with a flat roof and 180 sqm total floor area.")
+        self.assertEqual(spec["project_typology"], "single_dwelling")
 
     def test_glb_header_and_length(self):
         with tempfile.TemporaryDirectory() as directory:

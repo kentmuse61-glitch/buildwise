@@ -193,8 +193,35 @@ class ProjectApiTests(unittest.TestCase):
         self.assertIn("LEVEL 3 OF 3", third.text)
         self.assertIn("Entry lobby", first.text)
         self.assertIn("Balcony / outdoor space", third.text)
+        self.assertIn("STYLE BRIEF: COLONIAL-INSPIRED", third.text)
         self.assertNotEqual(first.text, third.text)
         self.assertEqual(self.client.get(concept["floor_plan_urls"][2].replace("plan-floor-3.svg", "plan-floor-4.svg")).status_code, 404)
+
+    def test_design_studio_keeps_custom_layouts_per_floor(self):
+        generated = self.client.post("/api/project/generate", headers=self.headers, json={
+            "description": "A 3-storey, 3-bedroom building in Kumasi with 270 sqm total floor area.",
+        })
+        self.assertEqual(generated.status_code, 200, generated.text)
+        project_id = generated.json()["id"]
+        level_one = self.client.put(f"/api/projects/{project_id}/design-studio", headers=self.headers, json={
+            "variant_name": "Three-level study", "active_floor": 1,
+            "rooms": [{"id": "l1-living", "label": "Level one living", "room_type": "living", "floor": 1, "x": 0, "y": 0, "width": 6, "depth": 5}],
+        })
+        self.assertEqual(level_one.status_code, 200, level_one.text)
+        level_two = self.client.put(f"/api/projects/{project_id}/design-studio", headers=self.headers, json={
+            "variant_name": "Three-level study", "active_floor": 2,
+            "rooms": [{"id": "l2-studio", "label": "Level two studio", "room_type": "room", "floor": 2, "x": 0, "y": 0, "width": 5, "depth": 4}],
+        })
+        self.assertEqual(level_two.status_code, 200, level_two.text)
+        first = self.client.get(f"/api/projects/{project_id}/workbench?floor=1", headers=self.headers)
+        second = self.client.get(f"/api/projects/{project_id}/workbench?floor=2", headers=self.headers)
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.json()["design_studio"]["rooms"][0]["label"], "Level one living")
+        self.assertEqual(second.json()["design_studio"]["rooms"][0]["label"], "Level two studio")
+        second_plan = self.client.get(f"/api/projects/{project_id}/artifacts/plan.svg?floor=2", headers=self.headers)
+        self.assertEqual(second_plan.status_code, 200, second_plan.text)
+        self.assertIn("Level two studio", second_plan.text)
 
     def test_market_direction_endpoint_is_bounded_and_non_persistent(self):
         response = self.client.post("/api/v2/generate/market-variants", json={

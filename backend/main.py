@@ -67,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.2.5",
+    version="1.2.6",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
@@ -655,10 +655,17 @@ def get_project(project_id: int, current_user: User = Depends(get_current_user),
 
 
 @app.get("/api/projects/{project_id}/workbench")
-def get_project_workbench(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    """Return transparent original planning, QTO and delivery cards for one project."""
+def get_project_workbench(
+    project_id: int,
+    floor: int | None = Query(default=None, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Return one selected concept floor's editable workspace and review cards."""
     project = _get_owned_project(project_id, current_user, db)
-    return workbench.build(_load_project_spec(project))
+    spec = _load_project_spec(project)
+    selected_spec = _plan_spec_for_floor(spec, floor) if floor is not None else spec
+    return workbench.build(selected_spec)
 
 
 @app.put("/api/projects/{project_id}/design-studio")
@@ -675,15 +682,29 @@ def save_design_studio(
     room_ids = [room.id for room in req.rooms]
     if len(room_ids) != len(set(room_ids)):
         raise HTTPException(status_code=422, detail="Each Design Studio room needs a unique ID")
-    if any(room.floor > project.floors for room in req.rooms):
-        raise HTTPException(status_code=422, detail="A room references a floor outside this project's floor count")
+    if any(room.floor != req.active_floor for room in req.rooms):
+        raise HTTPException(status_code=422, detail="Save rooms only on the Design Studio floor currently being edited")
 
     spec = _load_project_spec(project)
+    existing_design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
+    existing_rooms = existing_design.get("rooms") if isinstance(existing_design.get("rooms"), list) else []
+    # A floor save replaces only that floor.  Existing user-authored geometry on
+    # other levels remains available when the owner switches the editor level.
+    preserved_rooms = []
+    for room in existing_rooms:
+        if not isinstance(room, dict):
+            continue
+        try:
+            stored_floor = int(room.get("floor", 1))
+        except (TypeError, ValueError):
+            continue
+        if stored_floor != req.active_floor:
+            preserved_rooms.append(room)
     spec["design_studio"] = {
         "schema_version": 1,
         "variant_name": req.variant_name,
         "active_floor": req.active_floor,
-        "rooms": [room.model_dump() for room in req.rooms],
+        "rooms": preserved_rooms + [room.model_dump() for room in req.rooms],
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "disclaimer": "Editable concept geometry only; it is not a dimensioned architectural, structural, permit or construction drawing.",
     }

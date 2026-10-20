@@ -184,7 +184,9 @@ class PlanGenerator:
         element("rect", {"x": "56", "y": "122", "width": str(canvas_width - 112), "height": str(canvas_height - 212), "rx": "12", "fill": "url(#grid)", "stroke": "#e3ede6"})
         element("text", {"x": "58", "y": "70", "class": "sheet-title"}, f"{building_type} · CONCEPT PLAN")
         template_note = " · Ghana-focused planning template · not a code or permit approval" if spec.get("planning_guidance") else ""
-        element("text", {"x": "58", "y": "94", "class": "sheet-subtitle"}, f"{location}  /  LEVEL {active_floor} OF {floors}  /  DESIGN STUDY{template_note}")
+        style_brief = str(spec.get("concept_style") or "").strip().replace("_", " ")[:28]
+        style_note = f"  /  STYLE BRIEF: {style_brief.upper()}" if style_brief else ""
+        element("text", {"x": "58", "y": "94", "class": "sheet-subtitle"}, f"{location}  /  LEVEL {active_floor} OF {floors}  /  DESIGN STUDY{style_note}{template_note}")
         element("text", {"x": str(canvas_width - 58), "y": "70", "text-anchor": "end", "class": "sheet-subtitle"}, "BUILDWISE GH · REVISION 01")
         element("text", {"x": str(canvas_width - 58), "y": "94", "text-anchor": "end", "class": "note"}, "DIMENSIONS ARE CONCEPTUAL")
 
@@ -383,21 +385,21 @@ class PlanGenerator:
         return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
 
     def _layout_apartment_floor_rooms(self, spec: dict[str, Any], active_floor: int, floors: int) -> list[dict[str, Any]]:
-        """Create a repeatable apartment-floor concept plate with a visible core.
+        """Create one distinct apartment concept plate per level.
 
-        The arrangement is only a room-programme diagram. Unit count, fire
-        strategy, means of escape, accessibility, services and structure require
-        appointed professionals and site-specific development.
+        Declared bedrooms and bathrooms are apportioned across the total level
+        count exactly once.  The generator deliberately does not invent a unit
+        count, fire strategy, egress, accessibility, services or structure.
         """
-        bedrooms = max(1, self._positive_int(spec.get("bedrooms"), default=2, minimum=1, maximum=40))
-        bathrooms = max(1, self._positive_int(spec.get("bathrooms"), default=1, minimum=1, maximum=40))
-        room_types = ["entry_lobby" if active_floor == 1 else "corridor", "stair", "landing"]
-        for unit in ("a", "b"):
-            room_types.extend([
-                f"unit_{unit}_living", f"unit_{unit}_kitchen",
-                *[f"unit_{unit}_bedroom_{number + 1}" for number in range(max(1, math.ceil(bedrooms / 2)))],
-                *[f"unit_{unit}_bathroom_{number + 1}" for number in range(max(1, math.ceil(bathrooms / 2)))],
-            ])
+        bedrooms = self._positive_int(spec.get("bedrooms"), default=2, minimum=0, maximum=40)
+        bathrooms = self._positive_int(spec.get("bathrooms"), default=1, minimum=0, maximum=40)
+        prior_bedrooms = sum(self._allocation_for_floor(bedrooms, floor, floors) for floor in range(1, active_floor))
+        prior_bathrooms = sum(self._allocation_for_floor(bathrooms, floor, floors) for floor in range(1, active_floor))
+        bedrooms_here = self._allocation_for_floor(bedrooms, active_floor, floors)
+        bathrooms_here = self._allocation_for_floor(bathrooms, active_floor, floors)
+        room_types = ["entry_lobby" if active_floor == 1 else "corridor", "stair", "landing", "living", "dining", "kitchen", "store"]
+        room_types.extend(f"bedroom_{prior_bedrooms + number + 1}" for number in range(bedrooms_here))
+        room_types.extend(f"bathroom_{prior_bathrooms + number + 1}" for number in range(bathrooms_here))
         if active_floor == floors:
             room_types.append("balcony")
         return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
@@ -461,6 +463,8 @@ class PlanGenerator:
                 label = "Master ensuite"
             elif room_type.startswith("bathroom_common_"):
                 label = f"Shared bathroom {room_type.rsplit('_', 1)[1]}"
+            elif re.fullmatch(r"bathroom_\d+", room_type):
+                label = f"Bathroom {room_type.rsplit('_', 1)[1]}"
             elif room_type.startswith("unit_"):
                 parts = room_type.split("_")
                 unit = parts[1].upper() if len(parts) > 1 else "A"
