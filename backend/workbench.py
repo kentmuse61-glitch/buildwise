@@ -42,7 +42,7 @@ class ProjectWorkbench:
             "delivery_tracking": delivery,
             "drawing_review": self._drawing_review(spec),
             "site_and_engineering": self._site_and_engineering(spec),
-            "bim_interoperability": self._bim_interoperability(),
+            "bim_interoperability": self._bim_interoperability(spec),
             "method_note": (
                 "Buildwise uses original, deterministic concept calculations. Review and replace every allowance "
                 "with measured, professionally verified project information before procurement or construction."
@@ -174,9 +174,12 @@ class ProjectWorkbench:
     @staticmethod
     def _drawing_review(spec: dict[str, Any]) -> dict[str, Any]:
         design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
+        reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+        vector_inventory = reviews.get("vector_inventory") if isinstance(reviews.get("vector_inventory"), dict) else None
         return {
-            "status": "No source drawing uploaded",
+            "status": vector_inventory.get("status") if vector_inventory else "No source drawing uploaded",
             "available_design_data": "Editable room blocks" if design.get("rooms") else "Generated room blocks",
+            "vector_inventory": vector_inventory,
             "review_workflow": [
                 "Preserve each source file as an immutable original.",
                 "Record format, source, revision, author and checksum before automated extraction.",
@@ -189,10 +192,15 @@ class ProjectWorkbench:
     @staticmethod
     def _site_and_engineering(spec: dict[str, Any]) -> dict[str, Any]:
         handoff = spec.get("professional_handoff") if isinstance(spec.get("professional_handoff"), dict) else {}
+        reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+        seismic = reviews.get("seismic_trace") if isinstance(reviews.get("seismic_trace"), dict) else None
+        capture = reviews.get("capture_manifest") if isinstance(reviews.get("capture_manifest"), dict) else None
         site_inputs = sum(1 for key in ("site_width_m", "site_depth_m", "building_footprint_sqm") if handoff.get(key))
         return {
             "site_input_completeness": f"{site_inputs}/3 optional handoff dimensions supplied",
-            "seismic_visualization_status": "No professionally interpreted geotechnical or seismic dataset supplied",
+            "seismic_visualization_status": seismic.get("status") if seismic else "No professionally interpreted geotechnical or seismic dataset supplied",
+            "seismic_trace": seismic,
+            "site_capture_manifest": capture,
             "engineering_review_prompts": [
                 "Obtain a boundary/site survey and verify drainage, utilities and road reserve.",
                 "Appoint qualified professionals for structural, geotechnical, drainage, electrical and plumbing design as applicable.",
@@ -202,9 +210,12 @@ class ProjectWorkbench:
         }
 
     @staticmethod
-    def _bim_interoperability() -> dict[str, Any]:
+    def _bim_interoperability(spec: dict[str, Any]) -> dict[str, Any]:
+        reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+        ifc_manifest = reviews.get("ifc_manifest") if isinstance(reviews.get("ifc_manifest"), dict) else None
         return {
-            "ifc_import_status": "Not enabled",
+            "ifc_import_status": ifc_manifest.get("status") if ifc_manifest else "Not enabled",
+            "ifc_manifest": ifc_manifest,
             "glb_concept_status": "Available for generated Buildwise concept massing",
             "next_safe_step": "Review a maintained IFC viewer, its licence, browser security model and sample-model handling before accepting user IFC files.",
             "note": "Do not upload third-party BIM models unless you have the right to share them and a private storage/review workflow is in place.",

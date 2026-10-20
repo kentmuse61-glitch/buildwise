@@ -39,6 +39,7 @@ from .model_3d import Model3DGenerator
 from .nlp_engine import parse_construction_request
 from .plan_generator import PlanGenerator
 from .schedule_4d import Schedule4D
+from .review_tools import ReviewTools
 from .workbench import ProjectWorkbench
 
 
@@ -73,6 +74,7 @@ plan_gen = PlanGenerator(str(OUTPUT_DIR))
 model_3d = Model3DGenerator(str(OUTPUT_DIR))
 schedule_4d = Schedule4D(str(OUTPUT_DIR), str(DATA_DIR))
 workbench = ProjectWorkbench(plan_gen, schedule_4d)
+review_tools = ReviewTools()
 compliance = ComplianceChecker(str(DATA_DIR))
 contractors = ContractorMatcher(str(DATA_DIR))
 
@@ -185,6 +187,43 @@ class DeliveryProgressRequest(BaseModel):
     progress_percent: int = Field(ge=0, le=100)
     status: Literal["Not started", "In progress", "Blocked", "Complete"] = "Not started"
     note: str = Field(default="", max_length=800)
+
+
+class SeismicTraceRequest(BaseModel):
+    """Bounded user-provided waveform values for a non-engineering visual summary."""
+
+    sample_rate_hz: float = Field(ge=0.1, le=10_000)
+    acceleration_g: list[float] = Field(min_length=8, max_length=4096)
+    source_note: str = Field(default="", max_length=240)
+
+
+class CaptureManifestRequest(BaseModel):
+    """Capture metadata only; Buildwise does not receive images through this route."""
+
+    image_count: int = Field(ge=1, le=100_000)
+    ground_control_points: int = Field(default=0, ge=0, le=10_000)
+    overlap_percent: float = Field(ge=0, le=100)
+    coverage_area_sqm: float | None = Field(default=None, gt=0, le=1_000_000)
+    capture_note: str = Field(default="", max_length=500)
+
+
+class IfcManifestRequest(BaseModel):
+    """An owner-entered BIM inventory before future private IFC import review."""
+
+    ifc_schema: Literal["IFC2X3", "IFC4", "IFC4X3", "UNKNOWN"] = Field(default="UNKNOWN", alias="schema")
+    filename: str = Field(min_length=1, max_length=160)
+    element_counts: dict[str, int] = Field(min_length=1, max_length=80)
+    author_note: str = Field(default="", max_length=500)
+
+
+class VectorInventoryRequest(BaseModel):
+    """A human-confirmed vector inventory; no DXF/PDF source file is accepted."""
+
+    filename: str = Field(min_length=1, max_length=160)
+    unit: Literal["m", "mm", "ft", "unknown"] = "unknown"
+    layer_counts: dict[str, int] = Field(min_length=1, max_length=100)
+    closed_area_sqm: list[float] = Field(default_factory=list, max_length=500)
+    source_note: str = Field(default="", max_length=500)
 
 
 def _load_materials_data() -> dict[str, Any]:
@@ -563,6 +602,98 @@ def update_delivery_progress(
     project.spec_json = json.dumps(spec, ensure_ascii=False)
     db.commit()
     return {"message": "Progress saved", "workbench": workbench.build(spec)}
+
+
+@app.put("/api/projects/{project_id}/site-review/seismic-trace")
+def save_seismic_trace(
+    project_id: int,
+    req: SeismicTraceRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Store a limited visual waveform summary, never an engineering conclusion."""
+    project = _get_owned_project(project_id, current_user, db)
+    try:
+        summary = review_tools.seismic_trace_summary(req.sample_rate_hz, req.acceleration_g, req.source_note)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    spec = _load_project_spec(project)
+    reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+    reviews["seismic_trace"] = summary
+    spec["review_inputs"] = reviews
+    project.spec_json = json.dumps(spec, ensure_ascii=False)
+    db.commit()
+    return {"message": "Seismic trace visual summary saved", "review": summary, "workbench": workbench.build(spec)}
+
+
+@app.put("/api/projects/{project_id}/site-review/capture-manifest")
+def save_capture_manifest(
+    project_id: int,
+    req: CaptureManifestRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Store privacy-safe capture metadata without accepting photos or reconstructions."""
+    project = _get_owned_project(project_id, current_user, db)
+    try:
+        summary = review_tools.capture_manifest_summary(
+            req.image_count, req.ground_control_points, req.overlap_percent, req.coverage_area_sqm, req.capture_note
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    spec = _load_project_spec(project)
+    reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+    reviews["capture_manifest"] = summary
+    spec["review_inputs"] = reviews
+    project.spec_json = json.dumps(spec, ensure_ascii=False)
+    db.commit()
+    return {"message": "Capture manifest saved", "review": summary, "workbench": workbench.build(spec)}
+
+
+@app.put("/api/projects/{project_id}/bim/ifc-manifest")
+def save_ifc_manifest(
+    project_id: int,
+    req: IfcManifestRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Record project-owned IFC inventory metadata without importing a model file."""
+    project = _get_owned_project(project_id, current_user, db)
+    try:
+        summary = review_tools.ifc_manifest_summary(req.ifc_schema, req.filename, req.element_counts, req.author_note)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    spec = _load_project_spec(project)
+    reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+    reviews["ifc_manifest"] = summary
+    spec["review_inputs"] = reviews
+    project.spec_json = json.dumps(spec, ensure_ascii=False)
+    db.commit()
+    return {"message": "IFC manifest saved", "review": summary, "workbench": workbench.build(spec)}
+
+
+@app.put("/api/projects/{project_id}/drawing-review/vector-inventory")
+def save_vector_inventory(
+    project_id: int,
+    req: VectorInventoryRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Record human-confirmed vector counts and areas without altering drawings."""
+    project = _get_owned_project(project_id, current_user, db)
+    try:
+        summary = review_tools.vector_inventory_summary(
+            req.filename, req.unit, req.layer_counts, req.closed_area_sqm, req.source_note
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    spec = _load_project_spec(project)
+    reviews = spec.get("review_inputs") if isinstance(spec.get("review_inputs"), dict) else {}
+    reviews["vector_inventory"] = summary
+    spec["review_inputs"] = reviews
+    project.spec_json = json.dumps(spec, ensure_ascii=False)
+    db.commit()
+    return {"message": "Vector inventory saved", "review": summary, "workbench": workbench.build(spec)}
 
 
 @app.post("/api/debug/generate-test")

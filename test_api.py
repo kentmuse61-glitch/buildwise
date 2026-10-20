@@ -63,6 +63,46 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(self.client.get(f"/api/projects/{project['id']}", headers=self.headers).status_code, 404)
 
+    def test_review_manifests_provide_bounded_repository_informed_workflows(self):
+        generated = self.client.post("/api/project/generate", headers=self.headers, json={
+            "description": "A 2-bedroom home in Kumasi with 120 sqm total floor area.",
+        })
+        self.assertEqual(generated.status_code, 200, generated.text)
+        project_id = generated.json()["id"]
+
+        seismic = self.client.put(f"/api/projects/{project_id}/site-review/seismic-trace", headers=self.headers, json={
+            "sample_rate_hz": 100,
+            "acceleration_g": [0, 0.02, -0.03, 0.01, 0.04, -0.02, 0, 0.01],
+            "source_note": "Professionally supplied illustrative trace",
+        })
+        self.assertEqual(seismic.status_code, 200, seismic.text)
+        self.assertEqual(seismic.json()["review"]["sample_count"], 8)
+        self.assertGreater(seismic.json()["review"]["peak_absolute_acceleration_g"], 0)
+
+        capture = self.client.put(f"/api/projects/{project_id}/site-review/capture-manifest", headers=self.headers, json={
+            "image_count": 32, "ground_control_points": 6, "overlap_percent": 78, "coverage_area_sqm": 400,
+        })
+        self.assertEqual(capture.status_code, 200, capture.text)
+        self.assertIn("stronger", capture.json()["review"]["readiness"])
+
+        ifc = self.client.put(f"/api/projects/{project_id}/bim/ifc-manifest", headers=self.headers, json={
+            "schema": "IFC4", "filename": "owner-model.ifc", "element_counts": {"IfcWall": 20, "IfcDoor": 8},
+        })
+        self.assertEqual(ifc.status_code, 200, ifc.text)
+        self.assertEqual(ifc.json()["review"]["total_declared_elements"], 28)
+
+        vector = self.client.put(f"/api/projects/{project_id}/drawing-review/vector-inventory", headers=self.headers, json={
+            "filename": "owner-plan.dxf", "unit": "m", "layer_counts": {"Walls": 12, "Openings": 4}, "closed_area_sqm": [30.5, 20.0],
+        })
+        self.assertEqual(vector.status_code, 200, vector.text)
+        self.assertEqual(vector.json()["review"]["confirmed_closed_area_sqm"], 50.5)
+
+        workbench = self.client.get(f"/api/projects/{project_id}/workbench", headers=self.headers)
+        self.assertEqual(workbench.status_code, 200, workbench.text)
+        self.assertEqual(workbench.json()["bim_interoperability"]["ifc_manifest"]["schema"], "IFC4")
+        self.assertEqual(workbench.json()["drawing_review"]["vector_inventory"]["filename"], "owner-plan.dxf")
+        self.assertIn("User-supplied trace", workbench.json()["site_and_engineering"]["seismic_visualization_status"])
+
     def test_design_workbench_delivery_and_authenticated_debug_artifacts(self):
         generated = self.client.post("/api/project/generate", headers=self.headers, json={
             "description": "A 2-storey, 3-bedroom home in Kumasi with 180 sqm total floor area and solar power.",

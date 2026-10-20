@@ -396,12 +396,31 @@ function studioRoomRow(room, index, activeFloor) {
   return `<div class="studio-room-row" data-row-index="${Number(index)}"><input data-field="id" value="${safeId}" maxlength="64" aria-label="Room ID"><input data-field="label" value="${escapeHtml(room.label || `Room ${index + 1}`)}" maxlength="60" aria-label="Room name"><input data-field="room_type" value="${escapeHtml(room.type || room.room_type || "room")}" maxlength="40" aria-label="Room type"><input data-field="floor" type="number" min="1" max="50" value="${Number(room.floor || activeFloor)}" aria-label="Floor"><input data-field="x" type="number" min="0" max="1000" step="0.1" value="${Number(room.x || 0)}" aria-label="X position metres"><input data-field="y" type="number" min="0" max="1000" step="0.1" value="${Number(room.y || 0)}" aria-label="Y position metres"><input data-field="width" type="number" min="0.5" max="200" step="0.1" value="${Number(room.w || room.width || 3)}" aria-label="Width metres"><input data-field="depth" type="number" min="0.5" max="200" step="0.1" value="${Number(room.h || room.depth || 3)}" aria-label="Depth metres"><button type="button" class="button button-quiet studio-remove">Remove</button></div>`;
 }
 
+function seismicWaveformMarkup(trace) {
+  const values = trace?.chart_acceleration_g;
+  if (!Array.isArray(values) || values.length < 2) return "";
+  const peak = Math.max(...values.map((value) => Math.abs(Number(value) || 0)), 0.001);
+  const points = values.map((value, index) => {
+    const x = (index / (values.length - 1)) * 300;
+    const y = 60 - (Number(value) / peak) * 48;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return `<div class="waveform"><svg viewBox="0 0 300 120" role="img" aria-label="User-provided acceleration waveform visual summary"><line x1="0" y1="60" x2="300" y2="60" stroke="#dce7df"/><polyline fill="none" stroke="#2f7956" stroke-width="2" points="${points}"/></svg><span>${Number(trace.duration_seconds || 0).toFixed(2)} s · peak ${Number(trace.peak_absolute_acceleration_g || 0).toFixed(3)} g · visual summary only</span></div>`;
+}
+
 function workbenchMarkup(data) {
   const design = data.design_studio || {};
   const qto = data.quantity_takeoff || {};
   const blocks = data.block_modules || {};
   const energy = data.energy_planning || {};
   const delivery = data.delivery_tracking || {};
+  const drawing = data.drawing_review || {};
+  const site = data.site_and_engineering || {};
+  const bim = data.bim_interoperability || {};
+  const seismic = site.seismic_trace || null;
+  const capture = site.site_capture_manifest || null;
+  const vector = drawing.vector_inventory || null;
+  const ifc = bim.ifc_manifest || null;
   const rooms = design.rooms || [];
   const qtoRows = (qto.items || []).map((item) => `<tr><td>${escapeHtml(item.item)}</td><td>${Number(item.quantity || 0).toLocaleString("en-GH")} ${escapeHtml(item.unit || "")}</td><td>${escapeHtml(item.basis || "")}</td></tr>`).join("");
   const phaseOptions = (delivery.phases || []).map((phase) => `<option value="${escapeHtml(phase.key)}">${escapeHtml(phase.phase)} · ${Number(phase.progress_percent || 0)}%</option>`).join("");
@@ -412,7 +431,7 @@ function workbenchMarkup(data) {
     <details class="studio-details"><summary><strong>Transparent QTO & block modules</strong> · early-planning allowances</summary><table class="cost-table workbench-table"><thead><tr><th>Item</th><th>Quantity</th><th>Basis</th></tr></thead><tbody>${qtoRows}</tbody></table><div class="workbench-stats"><span><strong>${Number(blocks.estimated_blocks || 0).toLocaleString("en-GH")}</strong> conceptual blocks</span><span><strong>${Number(blocks.pallets_at_120_blocks || 0)}</strong> pallets at 120 blocks</span></div><div class="disclaimer-box">${escapeHtml(qto.disclaimer || "Review quantities professionally.")}</div></details>
     <details class="studio-details"><summary><strong>Energy planning</strong> · review-first prompts</summary><div class="workbench-stats"><span><strong>${Number(energy.concept_pv_capacity_range_kwp?.[0] || 0)}–${Number(energy.concept_pv_capacity_range_kwp?.[1] || 0)} kWp</strong> concept PV range</span><span>${energy.solar_requested_in_brief ? "Solar noted in the brief" : "Solar not specified in the brief"}</span></div><ul class="compliance-list">${(energy.planning_prompts || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><div class="disclaimer-box">${escapeHtml(energy.disclaimer || "Professional electrical review required.")}</div></details>
     <details class="studio-details"><summary><strong>Delivery tracker</strong> · user-entered progress</summary><div class="workbench-stats"><span><strong>${Number(delivery.overall_progress_percent || 0)}%</strong> duration-weighted progress</span><span>Not a quality, payment or completion certificate</span></div><table class="cost-table workbench-table"><thead><tr><th>Planned phase</th><th>Progress</th><th>Status</th></tr></thead><tbody>${phaseRows}</tbody></table><form id="delivery-progress-form" class="progress-form"><label class="form-field compact-field"><span>Phase</span><select id="delivery-phase">${phaseOptions}</select></label><label class="form-field compact-field"><span>Progress %</span><input id="delivery-percent" type="number" min="0" max="100" value="0"></label><label class="form-field compact-field"><span>Status</span><select id="delivery-status"><option>Not started</option><option>In progress</option><option>Blocked</option><option>Complete</option></select></label><label class="form-field compact-field"><span>Update note</span><input id="delivery-note" maxlength="800" placeholder="Optional site update"></label><button class="button button-primary" type="submit">Save progress</button></form><div class="disclaimer-box">${escapeHtml(delivery.disclaimer || "User-entered progress only.")}</div></details>
-    <details class="studio-details"><summary><strong>Drawing, site, engineering & BIM boundaries</strong></summary><p><strong>Drawing review:</strong> ${escapeHtml(data.drawing_review?.status || "No source drawing uploaded")}</p><p><strong>Seismic/site data:</strong> ${escapeHtml(data.site_and_engineering?.seismic_visualization_status || "No dataset supplied")}</p><p><strong>IFC/BIM:</strong> ${escapeHtml(data.bim_interoperability?.ifc_import_status || "Not enabled")}</p><div class="disclaimer-box">${escapeHtml(data.method_note || "Professional review remains required.")}</div></details>`;
+    <details class="studio-details"><summary><strong>Drawing, site, engineering & BIM review records</strong></summary><p><strong>Drawing review:</strong> ${escapeHtml(drawing.status || "No source drawing uploaded")}</p>${vector ? `<p class="form-hint">Vector inventory: ${Number(vector.total_declared_entities || 0).toLocaleString("en-GH")} declared entities · ${Number(vector.confirmed_closed_area_sqm || 0).toLocaleString("en-GH")} m² confirmed closed area.</p>` : ""}<p><strong>Seismic/site data:</strong> ${escapeHtml(site.seismic_visualization_status || "No dataset supplied")}</p>${seismicWaveformMarkup(seismic)}${capture ? `<p class="form-hint">Capture manifest: ${Number(capture.image_count || 0).toLocaleString("en-GH")} images · ${Number(capture.ground_control_points || 0)} control points · ${escapeHtml(capture.readiness || "")}</p>` : ""}<p><strong>IFC/BIM:</strong> ${escapeHtml(bim.ifc_import_status || "Not enabled")}</p>${ifc ? `<p class="form-hint">IFC manifest: ${escapeHtml(ifc.schema || "UNKNOWN")} · ${Number(ifc.total_declared_elements || 0).toLocaleString("en-GH")} declared elements.</p>` : ""}<div class="review-intake-grid"><form id="seismic-input-form" class="review-form"><strong>Seismic trace visualizer</strong><label class="form-field compact-field"><span>Sample rate · Hz</span><input id="seismic-rate" type="number" min="0.1" max="10000" step="0.1" value="100"></label><label class="form-field compact-field"><span>Acceleration samples · g, comma-separated</span><textarea id="seismic-values" maxlength="30000" placeholder="e.g. 0, 0.02, -0.03, 0.01, 0.04, -0.01, 0, 0.01"></textarea></label><label class="form-field compact-field"><span>Professional data source note</span><input id="seismic-note" maxlength="240" placeholder="Optional provenance"></label><button class="button button-secondary" type="submit">Visualize trace</button></form><form id="capture-input-form" class="review-form"><strong>Site-capture manifest</strong><label class="form-field compact-field"><span>Image count</span><input id="capture-count" type="number" min="1" max="100000" value="1"></label><label class="form-field compact-field"><span>Control points</span><input id="capture-control-points" type="number" min="0" max="10000" value="0"></label><label class="form-field compact-field"><span>Declared overlap %</span><input id="capture-overlap" type="number" min="0" max="100" value="60"></label><label class="form-field compact-field"><span>Coverage m² · optional</span><input id="capture-area" type="number" min="0.1" max="1000000" step="0.1"></label><button class="button button-secondary" type="submit">Save manifest</button></form><form id="ifc-input-form" class="review-form"><strong>IFC inventory manifest</strong><label class="form-field compact-field"><span>Filename</span><input id="ifc-filename" maxlength="160" placeholder="project.ifc"></label><label class="form-field compact-field"><span>Schema</span><select id="ifc-schema"><option>UNKNOWN</option><option>IFC2X3</option><option>IFC4</option><option>IFC4X3</option></select></label><label class="form-field compact-field"><span>Element counts JSON</span><textarea id="ifc-counts" placeholder='{"IfcWall": 20, "IfcDoor": 8}'></textarea></label><button class="button button-secondary" type="submit">Save IFC manifest</button></form><form id="vector-input-form" class="review-form"><strong>Vector inventory</strong><label class="form-field compact-field"><span>Source filename</span><input id="vector-filename" maxlength="160" placeholder="concept-plan.dxf"></label><label class="form-field compact-field"><span>Declared unit</span><select id="vector-unit"><option>unknown</option><option>m</option><option>mm</option><option>ft</option></select></label><label class="form-field compact-field"><span>Layer counts JSON</span><textarea id="vector-layers" placeholder='{"Walls": 28, "Openings": 10}'></textarea></label><label class="form-field compact-field"><span>Closed areas m², comma-separated</span><input id="vector-areas" placeholder="20.5, 14.2"></label><button class="button button-secondary" type="submit">Save vector inventory</button></form></div><div class="disclaimer-box">${escapeHtml(data.method_note || "Professional review remains required.")}</div></details>`;
 }
 
 async function initWorkbench(project) {
@@ -424,6 +443,7 @@ async function initWorkbench(project) {
     panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Editable concept geometry, transparent quantities and controlled progress records.</p></div></div>${workbenchMarkup(data)}`;
     initDesignStudio(project, data.design_studio || {});
     initDeliveryTracker(project);
+    initReviewInputs(project);
   } catch (error) {
     panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Could not load this project workspace.</p></div></div><div class="form-error">${escapeHtml(error.message)}</div>`;
   }
@@ -480,6 +500,55 @@ function initDeliveryTracker(project) {
     } finally {
       submit.disabled = false;
     }
+  });
+}
+
+function initReviewInputs(project) {
+  const id = Number(project.id);
+  const submitReview = async (form, path, body) => {
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      await api(`/api/projects/${id}${path}`, { method: "PUT", body });
+      showToast("Project review record saved.");
+      await initWorkbench(project);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  };
+  const seismic = $("#seismic-input-form");
+  seismic?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = $("#seismic-values").value.split(",").map((value) => Number(value.trim())).filter((value) => !Number.isNaN(value));
+    await submitReview(seismic, "/site-review/seismic-trace", { sample_rate_hz: Number($("#seismic-rate").value), acceleration_g: values, source_note: $("#seismic-note").value.trim() });
+  });
+  const capture = $("#capture-input-form");
+  capture?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const area = $("#capture-area").value.trim();
+    await submitReview(capture, "/site-review/capture-manifest", { image_count: Number($("#capture-count").value), ground_control_points: Number($("#capture-control-points").value), overlap_percent: Number($("#capture-overlap").value), coverage_area_sqm: area ? Number(area) : null, capture_note: "" });
+  });
+  const parseObject = (value, label) => {
+    const parsed = JSON.parse(value);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${label} must be a JSON object.`);
+    return parsed;
+  };
+  const ifc = $("#ifc-input-form");
+  ifc?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await submitReview(ifc, "/bim/ifc-manifest", { schema: $("#ifc-schema").value, filename: $("#ifc-filename").value.trim(), element_counts: parseObject($("#ifc-counts").value, "Element counts"), author_note: "" });
+    } catch (error) { showToast(error.message, "error"); }
+  });
+  const vector = $("#vector-input-form");
+  vector?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const areas = $("#vector-areas").value.trim() ? $("#vector-areas").value.split(",").map((value) => Number(value.trim())) : [];
+      await submitReview(vector, "/drawing-review/vector-inventory", { filename: $("#vector-filename").value.trim(), unit: $("#vector-unit").value, layer_counts: parseObject($("#vector-layers").value, "Layer counts"), closed_area_sqm: areas, source_note: "" });
+    } catch (error) { showToast(error.message, "error"); }
   });
 }
 

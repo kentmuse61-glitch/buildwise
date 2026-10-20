@@ -82,6 +82,10 @@ Copy `.env.example` to `.env` and set:
 - `GET /api/projects/{id}/workbench` — original Design Studio, QTO, energy and delivery summary (authenticated).
 - `PUT /api/projects/{id}/design-studio` — save bounded editable room blocks (authenticated).
 - `PUT /api/projects/{id}/delivery/progress` — record user-entered phase progress (authenticated; not a completion or payment certification).
+- `PUT /api/projects/{id}/site-review/seismic-trace` — record a bounded user-supplied waveform visual summary; it is not a seismic or structural assessment (authenticated).
+- `PUT /api/projects/{id}/site-review/capture-manifest` — record site-capture metadata without uploading images (authenticated).
+- `PUT /api/projects/{id}/bim/ifc-manifest` — record owner-entered IFC inventory metadata without importing a model (authenticated).
+- `PUT /api/projects/{id}/drawing-review/vector-inventory` — record human-confirmed vector counts/areas without uploading or changing a drawing (authenticated).
 - `POST /api/debug/generate-test` — generate fixed-ID diagnostic plan, GLB and schedule artifacts (authenticated).
 - `GET /api/debug/artifacts/{plan.svg|model.glb|schedule.json}` — fetch a generated diagnostic artifact (authenticated).
 - `POST /api/contractors/match` — match directory records by city, budget and building type.
