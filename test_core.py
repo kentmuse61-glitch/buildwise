@@ -79,6 +79,8 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertIn("PRESENTATION CONCEPT PLAN", presentation)
         self.assertIn("TECHNICAL CONCEPT PLAN", technical)
         self.assertIn("LEVEL 2 OF 2", technical)
+        self.assertIn("ROOM SCHEDULE", technical)
+        self.assertIn("BUILDWISE GH · CONCEPT SHEET", technical)
         self.assertIn('class="outer-wall"', technical)
         self.assertIn('fill="#ffffff"', technical)
         self.assertNotEqual(presentation, technical)
@@ -210,6 +212,7 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertIn("Floor 2 dollhouse slab", names)
         self.assertTrue(any("bed cue" in name for name in names))
         self.assertTrue(any("rear room wall" in name for name in names))
+        self.assertIn("Warm cutaway walls", [material["name"] for material in document["materials"]])
         self.assertIn("early-planning cutaway floor-programme visualization only", document["asset"]["extras"]["buildwise"]["modelPurpose"])
         self.assertTrue(all("target" in item for item in document["bufferViews"]))
 

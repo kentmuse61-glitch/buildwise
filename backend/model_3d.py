@@ -62,7 +62,11 @@ class Model3DGenerator:
     def _build_dollhouse_glb(self, spec: dict[str, Any], filepath: Path) -> None:
         floors = self._number_as_int(spec.get("floors"), default=1, minimum=1, maximum=self._MAX_FLOORS)
         floor_height = self._number_as_float(spec.get("ceiling_height"), default=3.05, minimum=2.5, maximum=5.0)
-        wall_height = max(2.25, floor_height - 0.42)
+        # Lower translucent walls intentionally keep furniture and floor programme
+        # visible in an open-roof dollhouse. Exterior massing is offered as the
+        # separate opaque view, so this model optimises spatial legibility.
+        wall_height = max(1.15, floor_height * 0.46)
+        shell_wall_height = max(1.45, floor_height * 0.62)
         wall_thickness = 0.12
         materials = self._dollhouse_materials()
         meshes: list[dict[str, Any]] = []
@@ -93,8 +97,8 @@ class Model3DGenerator:
             all_extents.append((x1, x2, z1, z2))
             add_box(f"Floor {floor_number} dollhouse slab", 1, x1 - .14, base - .10, z1 - .14, x2 + .14, base, z2 + .14)
             # Back and left enclosure retain a readable cutaway from the front-right camera.
-            add_box(f"Floor {floor_number} back shell wall", 0, x1, base, z2 - wall_thickness, x2, base + wall_height, z2)
-            add_box(f"Floor {floor_number} left shell wall", 0, x1, base, z1, x1 + wall_thickness, base + wall_height, z2)
+            add_box(f"Floor {floor_number} back shell wall", 0, x1, base, z2 - wall_thickness, x2, base + shell_wall_height, z2)
+            add_box(f"Floor {floor_number} left shell wall", 0, x1, base, z1, x1 + wall_thickness, base + shell_wall_height, z2)
             for room_index, room in enumerate(rooms, start=1):
                 raw_x, raw_z = float(room["x"]), float(room["y"])
                 room_w, room_d = float(room["w"]), float(room["h"])
@@ -130,13 +134,27 @@ class Model3DGenerator:
         prefix = f"Floor {floor_number} {room_label}"
         if room_type == "bedroom":
             add_box(f"{prefix} bed cue", 5, cx - width * .22, base + .05, cz - depth * .20, cx + width * .22, base + .38, cz + depth * .20)
+            add_box(f"{prefix} bedside cue west", 5, cx - width * .30, base + .05, cz - depth * .20, cx - width * .23, base + .26, cz - depth * .07)
+            add_box(f"{prefix} bedside cue east", 5, cx + width * .23, base + .05, cz - depth * .20, cx + width * .30, base + .26, cz - depth * .07)
         elif room_type in {"living", "family"}:
             add_box(f"{prefix} sofa cue", 5, cx - width * .25, base + .05, z1 + depth * .15, cx + width * .25, base + .34, z1 + depth * .28)
+            add_box(f"{prefix} armchair cue", 5, x1 + width * .12, base + .05, cz - depth * .12, x1 + width * .25, base + .31, cz + depth * .12)
             add_box(f"{prefix} table cue", 5, cx - width * .10, base + .05, cz - depth * .10, cx + width * .10, base + .24, cz + depth * .10)
-        elif room_type in {"kitchen", "dining"}:
-            add_box(f"{prefix} counter cue", 5, x1 + width * .18, base + .05, z1 + depth * .18, x1 + width * .82, base + .34, z1 + depth * .32)
+        elif room_type == "kitchen":
+            add_box(f"{prefix} counter cue", 5, x1 + width * .14, base + .05, z1 + depth * .14, x1 + width * .86, base + .39, z1 + depth * .30)
+            add_box(f"{prefix} island cue", 5, cx - width * .18, base + .05, cz - depth * .13, cx + width * .18, base + .35, cz + depth * .13)
+        elif room_type == "dining":
+            add_box(f"{prefix} dining table cue", 5, cx - width * .22, base + .05, cz - depth * .16, cx + width * .22, base + .29, cz + depth * .16)
+            for seat, sx, sz in (("north", 0, .27), ("south", 0, -.27), ("west", -.30, 0), ("east", .30, 0)):
+                add_box(f"{prefix} dining chair cue {seat}", 5, cx + width * (sx - .045), base + .05, cz + depth * (sz - .045), cx + width * (sx + .045), base + .25, cz + depth * (sz + .045))
         elif room_type in {"bathroom", "ensuite", "wc"}:
             add_box(f"{prefix} fixture cue", 5, cx - width * .16, base + .05, cz - depth * .18, cx + width * .16, base + .22, cz + depth * .18)
+            add_box(f"{prefix} shower cue", 5, x1 + width * .08, base + .05, z1 + depth * .08, x1 + width * .23, base + .12, z1 + depth * .30)
+        elif room_type in {"stair", "stairs", "circulation"}:
+            tread_h = min(.16, (depth * .70) / 9)
+            for step in range(6):
+                step_z = z1 + depth * (.12 + step * .10)
+                add_box(f"{prefix} stair tread cue {step + 1}", 5, x1 + width * .20, base + .05 + step * tread_h, step_z, x2 - width * .20, base + .13 + step * tread_h, step_z + depth * .11)
 
     def _generate_fallback_model(self, project_id: str | int) -> str:
         """Write a small, valid one-storey fallback massing GLB."""
@@ -281,17 +299,37 @@ class Model3DGenerator:
         add_box("West roof parapet", 2, -half_width - 0.28, roof_base + 0.18, -half_depth - 0.12, -half_width - 0.12, roof_base + 0.18 + parapet_h, half_depth + 0.12)
         add_box("East roof parapet", 2, half_width + 0.12, roof_base + 0.18, -half_depth - 0.12, half_width + 0.28, roof_base + 0.18 + parapet_h, half_depth + 0.12)
 
+        # Buildwise-owned solar/terrace cues make feature-driven exterior concepts
+        # more legible without pretending to size a PV system or roof structure.
+        if "solar_power" in features:
+            panel_y = roof_base + 0.20
+            panel_w = min(1.05, max(.72, width / 8))
+            panel_d = min(1.62, max(1.05, depth / 4))
+            for row in range(2):
+                for column in range(3):
+                    cx = (column - 1) * panel_w * 1.16
+                    cz = (row - .5) * panel_d * 1.12
+                    add_box(f"Roof solar concept panel {row + 1}-{column + 1}", 6, cx - panel_w / 2, panel_y, cz - panel_d / 2, cx + panel_w / 2, panel_y + .045, cz + panel_d / 2)
+        # Simple entry steps and planted edges add a human-scale foreground while
+        # remaining explicitly illustrative landscape geometry.
+        step_w = min(width * .42, 4.4)
+        for step in range(3):
+            projection = .32 + step * .22
+            add_box(f"Entry step {step + 1}", 1, -step_w / 2, -0.02 + step * .07, -half_depth - projection, step_w / 2, .05 + step * .07, -half_depth - projection + .28)
+        for side, x in (("west", -half_width - .75), ("east", half_width + .45)):
+            add_box(f"{side.title()} landscape planter", 5, x, -0.05, -half_depth + depth * .16, x + .30, .28, -half_depth + depth * .54)
+
         self._write_bytes(filepath, self._build_glb_bytes(meshes, materials))
 
     @staticmethod
     def _dollhouse_materials() -> list[dict[str, Any]]:
         """Muted original concept materials for a readable cutaway preview."""
         return [
-            {"name": "Warm concept walls", "baseColorFactor": [0.92, 0.91, 0.86, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.92},
-            {"name": "Light oak concept floor", "baseColorFactor": [0.71, 0.57, 0.40, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.84},
-            {"name": "Living concept finish", "baseColorFactor": [0.71, 0.79, 0.71, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
-            {"name": "Bedroom concept finish", "baseColorFactor": [0.67, 0.77, 0.87, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
-            {"name": "Wet-room concept finish", "baseColorFactor": [0.82, 0.88, 0.90, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.68},
+            {"name": "Warm cutaway walls", "baseColorFactor": [0.94, 0.92, 0.84, 0.82], "metallicFactor": 0.0, "roughnessFactor": 0.90},
+            {"name": "Light oak concept floor", "baseColorFactor": [0.66, 0.48, 0.27, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.84},
+            {"name": "Living concept finish", "baseColorFactor": [0.42, 0.68, 0.49, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
+            {"name": "Bedroom concept finish", "baseColorFactor": [0.35, 0.61, 0.83, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.88},
+            {"name": "Wet-room concept finish", "baseColorFactor": [0.47, 0.76, 0.82, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.68},
             {"name": "Furniture cue", "baseColorFactor": [0.38, 0.24, 0.15, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.72},
             {"name": "Landscape base", "baseColorFactor": [0.38, 0.58, 0.37, 1.0], "metallicFactor": 0.0, "roughnessFactor": 1.0},
         ]
@@ -306,6 +344,7 @@ class Model3DGenerator:
             {"name": "Blue-grey glazing", "baseColorFactor": [0.06, 0.30, 0.40, 1.0], "metallicFactor": 0.16, "roughnessFactor": 0.22},
             {"name": "Timber accent", "baseColorFactor": [0.45, 0.23, 0.12, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.72},
             {"name": "Landscape base", "baseColorFactor": [0.31, 0.47, 0.31, 1.0], "metallicFactor": 0.0, "roughnessFactor": 1.0},
+            {"name": "Solar concept panel", "baseColorFactor": [0.025, 0.10, 0.19, 1.0], "metallicFactor": 0.55, "roughnessFactor": 0.25},
         ]
 
     @staticmethod

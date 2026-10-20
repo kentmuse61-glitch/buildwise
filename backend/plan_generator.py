@@ -262,6 +262,24 @@ class PlanGenerator:
         element("line", {"x1": f"{dim_x:.2f}", "y1": f"{outer_y:.2f}", "x2": f"{dim_x:.2f}", "y2": f"{outer_y + outer_h:.2f}", "stroke": "#61746a", "stroke-width": "1.2", "marker-start": "url(#arrow)", "marker-end": "url(#arrow)"})
         element("text", {"x": f"{dim_x - 11:.2f}", "y": f"{outer_y + outer_h / 2:.2f}", "text-anchor": "middle", "transform": f"rotate(-90 {dim_x - 11:.2f} {outer_y + outer_h / 2:.2f})", "class": "dimension"}, f"OVERALL DEPTH  {total_height:.2f} m")
 
+        # Compact room schedule makes the sheet legible as a planning plate rather
+        # than a coloured room diagram. It reports the generator's own schematic
+        # areas only; it is not a measured accommodation schedule.
+        schedule_x, schedule_y, schedule_w = canvas_width - 174, 185, 118
+        element("rect", {"x": str(schedule_x), "y": str(schedule_y), "width": str(schedule_w), "height": str(min(300, 35 + len(rooms) * 18)), "fill": "#ffffff", "fill-opacity": ".92", "stroke": "#5a6e64", "stroke-width": "1"})
+        element("text", {"x": str(schedule_x + 7), "y": str(schedule_y + 14), "class": "note"}, "ROOM SCHEDULE")
+        element("line", {"x1": str(schedule_x + 6), "y1": str(schedule_y + 20), "x2": str(schedule_x + schedule_w - 6), "y2": str(schedule_y + 20), "stroke": "#6b7d73", "stroke-width": ".8"})
+        for room_index, room in enumerate(rooms[:14], start=1):
+            row_y = schedule_y + 20 + room_index * 17
+            room_code = f"R{room_index:02d}"
+            room_name = str(room.get("label") or "Room")[:14]
+            room_area = float(room["w"]) * float(room["h"])
+            element("text", {"x": str(schedule_x + 7), "y": str(row_y), "class": "note"}, room_code)
+            element("text", {"x": str(schedule_x + 33), "y": str(row_y), "class": "note"}, room_name)
+            element("text", {"x": str(schedule_x + schedule_w - 7), "y": str(row_y), "text-anchor": "end", "class": "note"}, f"{room_area:.1f}")
+            element("line", {"x1": str(schedule_x + 6), "y1": str(row_y + 4), "x2": str(schedule_x + schedule_w - 6), "y2": str(row_y + 4), "stroke": "#d6dfda", "stroke-width": ".5"})
+        element("text", {"x": str(schedule_x + schedule_w - 7), "y": str(schedule_y + min(294, 28 + min(len(rooms), 14) * 17)), "text-anchor": "end", "class": "note"}, "m² approximate")
+
         # Sheet furniture: north arrow, graphic scale and legend.
         north_x, north_y = canvas_width - 110, 150
         element("path", {"d": f"M {north_x:.2f} {north_y - 31:.2f} L {north_x - 13:.2f} {north_y + 14:.2f} L {north_x:.2f} {north_y + 7:.2f} L {north_x + 13:.2f} {north_y + 14:.2f} Z", "fill": "#1c4b39"})
@@ -274,6 +292,12 @@ class PlanGenerator:
         element("text", {"x": f"{scale_x:.2f}", "y": f"{scale_y + 26:.2f}", "class": "dimension"}, "0")
         element("text", {"x": f"{scale_x + scale_pixels:.2f}", "y": f"{scale_y + 26:.2f}", "text-anchor": "end", "class": "dimension"}, f"{scale_metres:.0f} m")
         element("text", {"x": "300", "y": str(canvas_height - 87), "class": "note"}, "LEGEND  ·  BLUE = CONCEPT GLAZING   BROWN = SYMBOLIC DOOR   GREY = FURNITURE")
+        title_x, title_y = canvas_width - 330, canvas_height - 132
+        element("rect", {"x": str(title_x), "y": str(title_y), "width": "274", "height": "58", "fill": "#ffffff", "stroke": "#5b6c63", "stroke-width": "1"})
+        element("line", {"x1": str(title_x), "y1": str(title_y + 22), "x2": str(title_x + 274), "y2": str(title_y + 22), "stroke": "#5b6c63", "stroke-width": "1"})
+        element("text", {"x": str(title_x + 9), "y": str(title_y + 15), "class": "note"}, "BUILDWISE GH · CONCEPT SHEET")
+        element("text", {"x": str(title_x + 9), "y": str(title_y + 38), "class": "note"}, f"LEVEL {active_floor} / {floors} · SCALE GRAPHIC ONLY")
+        element("text", {"x": str(title_x + 9), "y": str(title_y + 51), "class": "note"}, "NOT FOR CONSTRUCTION OR PERMIT")
         element("rect", {"x": "56", "y": str(canvas_height - 64), "width": str(canvas_width - 112), "height": "28", "rx": "8", "fill": "#edf4ef"})
         element("text", {"x": "70", "y": str(canvas_height - 46), "class": "note"}, "CONCEPT DESIGN STUDY ONLY — VERIFY ALL DIMENSIONS, WALLS, OPENINGS, SITE CONDITIONS, STRUCTURE AND SERVICES WITH QUALIFIED PROFESSIONALS.")
         parts.append("</svg>")

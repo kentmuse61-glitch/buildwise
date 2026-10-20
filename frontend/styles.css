@@ -484,3 +484,27 @@ a { color: inherit; }
   .concept-style-tabs { margin-top: 0; }
   .concept-style-button { flex: 1 1 auto; min-height: 29px; padding: 4px 6px; font-size: 8px; }
 }
+
+/* Reading-first visual mode: the floor plan or model gets the whole canvas,
+   while Split remains available for review on wide displays. */
+.studio-canvas-actions { display: inline-flex; align-items: center; gap: 5px; }
+.studio-expand-button { min-height: 22px; border: 1px solid #3d705b; border-radius: 4px; padding: 2px 6px; background: #102b22; color: #afdec5; font-size: 7px; font-weight: 800; cursor: pointer; }
+.studio-expand-button:hover { border-color: #81caa1; color: #fff; }
+.studio-canvas-pane:fullscreen { display: flex; flex-direction: column; box-sizing: border-box; padding: 22px; background: #09130f; }
+.studio-canvas-pane:fullscreen .plan-stage, .studio-canvas-pane:fullscreen .model-stage { flex: 1; height: auto; min-height: 0; }
+.studio-viewport[data-studio-mode="2d"], .studio-viewport[data-studio-mode="3d"] { grid-template-columns: minmax(0, 1fr); }
+.studio-viewport[data-studio-mode="2d"] .studio-inspector, .studio-viewport[data-studio-mode="3d"] .studio-inspector { display: none; }
+.studio-viewport[data-studio-mode="2d"] .studio-canvas-pane .plan-stage, .studio-viewport[data-studio-mode="3d"] .studio-canvas-pane .model-stage { height: clamp(420px, 56vw, 680px); min-height: 420px; }
+@media (orientation: portrait) {
+  .studio-viewport, .studio-viewport[data-studio-mode="2d"], .studio-viewport[data-studio-mode="3d"] { grid-template-columns: minmax(0, 1fr); }
+  .studio-inspector { grid-column: auto; }
+  .studio-viewport[data-studio-mode="split"] .studio-inspector { display: block; }
+  .studio-canvas-pane .plan-stage { min-height: 0; aspect-ratio: 1120 / 820; }
+  .studio-viewport[data-studio-mode="2d"] .studio-canvas-pane .plan-stage, .studio-viewport[data-studio-mode="3d"] .studio-canvas-pane .model-stage { height: min(118vw, 620px); min-height: 320px; }
+}
+/* Do not turn an A3-ratio plan into a horizontal scroll surface on a phone.
+   The plan image owns its aspect ratio; the focused 3D viewport keeps height. */
+@media (orientation: portrait) {
+  .studio-viewport[data-studio-mode="2d"] .studio-canvas-pane .plan-stage { width: 100%; height: auto; min-height: 0; aspect-ratio: 1120 / 820; overflow: hidden; }
+  .studio-viewport[data-studio-mode="2d"] .studio-canvas-pane .plan-stage img { width: 100%; max-width: 100%; height: 100%; object-fit: contain; }
+}
