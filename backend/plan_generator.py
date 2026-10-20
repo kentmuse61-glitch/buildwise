@@ -210,8 +210,30 @@ class PlanGenerator:
         parts.append("</svg>")
         return "\n".join(parts)
 
+    def layout_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return concept room geometry for the active Design Studio floor.
+
+        This public read-only helper lets the workbench and SVG generator share
+        the same geometry.  Stored room data is still treated as untrusted and
+        normalized again here before it is rendered.
+        """
+        return self._layout_rooms(spec)
+
     def _layout_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        """Choose the residential planning template or a neutral room grid."""
+        """Choose custom Design Studio geometry or a transparent starter grid."""
+        design = spec.get("design_studio") if isinstance(spec.get("design_studio"), dict) else {}
+        custom_rooms = design.get("rooms") if isinstance(design.get("rooms"), list) else []
+        if custom_rooms:
+            active_floor = self._positive_int(
+                design.get("active_floor"),
+                default=1,
+                minimum=1,
+                maximum=self._positive_int(spec.get("floors"), default=1, minimum=1, maximum=50),
+            )
+            normalized = self._normalize_custom_rooms(custom_rooms, active_floor)
+            if normalized:
+                return normalized
+
         building_type = str(spec.get("building_type") or "residential").strip().lower()
         if building_type == "residential":
             return self._layout_ghana_residential_rooms(spec)
@@ -230,6 +252,41 @@ class PlanGenerator:
         while len(room_types) < total:
             room_types.append(extras[(len(room_types) - 2) % len(extras)])
         return self._room_records_to_grid(self._records_for_types(room_types), max_columns=3)
+
+    def _normalize_custom_rooms(self, custom_rooms: list[Any], active_floor: int) -> list[dict[str, Any]]:
+        """Normalize user-authored room blocks for safe SVG rendering.
+
+        The API validates these fields before persistence.  This extra guard is
+        intentional so a malformed legacy record cannot produce unbounded SVG
+        dimensions or inject markup through a room label/type.
+        """
+        normalized: list[dict[str, Any]] = []
+        for index, raw in enumerate(custom_rooms):
+            if not isinstance(raw, dict):
+                continue
+            floor = self._positive_int(raw.get("floor"), default=1, minimum=1, maximum=50)
+            if floor != active_floor:
+                continue
+            try:
+                x = min(max(float(raw.get("x")), 0.0), 1_000.0)
+                y = min(max(float(raw.get("y")), 0.0), 1_000.0)
+                width = min(max(float(raw.get("width")), 0.5), 200.0)
+                depth = min(max(float(raw.get("depth")), 0.5), 200.0)
+            except (TypeError, ValueError):
+                continue
+            label = str(raw.get("label") or f"Room {index + 1}").strip()[:60] or f"Room {index + 1}"
+            room_type = re.sub(r"[^A-Za-z0-9_-]", "", str(raw.get("room_type") or "room").lower())[:40] or "room"
+            normalized.append({
+                "id": str(raw.get("id") or f"room-{index + 1}")[:64],
+                "type": room_type,
+                "label": label,
+                "w": width,
+                "h": depth,
+                "x": x,
+                "y": y,
+                "floor": floor,
+            })
+        return normalized
 
     def _layout_ghana_residential_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Make a transparent, Ghana-focused residential concept layout.

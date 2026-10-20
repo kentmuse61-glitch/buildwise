@@ -10,7 +10,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 
@@ -39,6 +39,7 @@ from .model_3d import Model3DGenerator
 from .nlp_engine import parse_construction_request
 from .plan_generator import PlanGenerator
 from .schedule_4d import Schedule4D
+from .workbench import ProjectWorkbench
 
 
 DATA_DIR = BASE_DIR / "data"
@@ -51,9 +52,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Construction AI Ghana",
-    version="1.0.0",
-    description="Early-stage construction concept planning tools. Generated outputs are illustrative, not professional approvals.",
+    title="Buildwise GH",
+    version="1.1.0",
+    description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
 
@@ -71,6 +72,7 @@ async def add_security_headers(request: Request, call_next):
 plan_gen = PlanGenerator(str(OUTPUT_DIR))
 model_3d = Model3DGenerator(str(OUTPUT_DIR))
 schedule_4d = Schedule4D(str(OUTPUT_DIR), str(DATA_DIR))
+workbench = ProjectWorkbench(plan_gen, schedule_4d)
 compliance = ComplianceChecker(str(DATA_DIR))
 contractors = ContractorMatcher(str(DATA_DIR))
 
@@ -137,6 +139,52 @@ class ContractorQuery(BaseModel):
     location: str = Field(min_length=1, max_length=100)
     budget: float = Field(gt=0, le=1_000_000_000_000)
     building_type: str = Field(default="residential", max_length=50)
+
+
+class DesignRoomRequest(BaseModel):
+    """Bounded concept geometry for the original Design Studio."""
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    label: str = Field(min_length=1, max_length=60)
+    room_type: str = Field(default="room", min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    floor: int = Field(default=1, ge=1, le=50)
+    x: float = Field(ge=0, le=1_000)
+    y: float = Field(ge=0, le=1_000)
+    width: float = Field(gt=0.49, le=200)
+    depth: float = Field(gt=0.49, le=200)
+
+    @field_validator("label")
+    @classmethod
+    def normalize_label(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Room label cannot be blank")
+        return normalized
+
+
+class DesignStudioRequest(BaseModel):
+    """A single project-owned editable layout variant."""
+
+    active_floor: int = Field(default=1, ge=1, le=50)
+    variant_name: str = Field(default="Working concept", min_length=1, max_length=80)
+    rooms: list[DesignRoomRequest] = Field(min_length=1, max_length=120)
+
+    @field_validator("variant_name")
+    @classmethod
+    def normalize_variant_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Variant name cannot be blank")
+        return normalized
+
+
+class DeliveryProgressRequest(BaseModel):
+    """User-entered progress only; it never certifies work or payment."""
+
+    phase_key: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9-]+$")
+    progress_percent: int = Field(ge=0, le=100)
+    status: Literal["Not started", "In progress", "Blocked", "Complete"] = "Not started"
+    note: str = Field(default="", max_length=800)
 
 
 def _load_materials_data() -> dict[str, Any]:
@@ -226,6 +274,7 @@ def _project_summary(project: Project) -> dict[str, Any]:
         "plan_url": project.plan_svg_path,
         "model_3d_url": project.model_3d_path,
         "schedule_url": project.schedule_json_path,
+        "workbench_url": f"/api/projects/{project.id}/workbench",
         "status": project.status,
         "created_at": project.created_at.isoformat() if project.created_at else None,
     }
@@ -450,6 +499,130 @@ def get_project(project_id: int, current_user: User = Depends(get_current_user),
         "compliance": compliance.check(spec),
     })
     return result
+
+
+@app.get("/api/projects/{project_id}/workbench")
+def get_project_workbench(project_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
+    """Return transparent original planning, QTO and delivery cards for one project."""
+    project = _get_owned_project(project_id, current_user, db)
+    return workbench.build(_load_project_spec(project))
+
+
+@app.put("/api/projects/{project_id}/design-studio")
+def save_design_studio(
+    project_id: int,
+    req: DesignStudioRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Save bounded room-block geometry and regenerate only on the next artifact request."""
+    project = _get_owned_project(project_id, current_user, db)
+    if req.active_floor > project.floors:
+        raise HTTPException(status_code=422, detail="The selected Design Studio floor is outside this project's floor count")
+    room_ids = [room.id for room in req.rooms]
+    if len(room_ids) != len(set(room_ids)):
+        raise HTTPException(status_code=422, detail="Each Design Studio room needs a unique ID")
+    if any(room.floor > project.floors for room in req.rooms):
+        raise HTTPException(status_code=422, detail="A room references a floor outside this project's floor count")
+
+    spec = _load_project_spec(project)
+    spec["design_studio"] = {
+        "schema_version": 1,
+        "variant_name": req.variant_name,
+        "active_floor": req.active_floor,
+        "rooms": [room.model_dump() for room in req.rooms],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "disclaimer": "Editable concept geometry only; it is not a dimensioned architectural, structural, permit or construction drawing.",
+    }
+    project.spec_json = json.dumps(spec, ensure_ascii=False)
+    db.commit()
+    db.refresh(project)
+    return {"message": "Design Studio concept saved", "spec": spec, "workbench": workbench.build(spec)}
+
+
+@app.put("/api/projects/{project_id}/delivery/progress")
+def update_delivery_progress(
+    project_id: int,
+    req: DeliveryProgressRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Store project-owner progress statements with an explicit non-certification boundary."""
+    project = _get_owned_project(project_id, current_user, db)
+    spec = _load_project_spec(project)
+    delivery = spec.get("delivery_tracking") if isinstance(spec.get("delivery_tracking"), dict) else {}
+    progress = delivery.get("progress") if isinstance(delivery.get("progress"), dict) else {}
+    progress[req.phase_key] = {
+        "percent": req.progress_percent,
+        "status": req.status,
+        "note": req.note.strip(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    delivery["progress"] = progress
+    spec["delivery_tracking"] = delivery
+    project.spec_json = json.dumps(spec, ensure_ascii=False)
+    db.commit()
+    return {"message": "Progress saved", "workbench": workbench.build(spec)}
+
+
+@app.post("/api/debug/generate-test")
+def generate_test_artifacts(current_user: User = Depends(get_current_user)):
+    """Generate bounded, authenticated smoke-test artifacts without touching project data.
+
+    This endpoint is intentionally authenticated: publicly writing artifacts on a
+    live service would create an unnecessary abuse surface.  It always uses one
+    fixed identifier, so repeated diagnostic calls do not create unbounded files.
+    """
+    del current_user  # Authentication is the access control; no identity is stored.
+    sample_spec = {
+        "building_type": "residential",
+        "location": "Kumasi",
+        "floors": 2,
+        "bedrooms": 3,
+        "bathrooms": 2,
+        "rooms_total": 8,
+        "area_sqm": 180,
+        "special_features": ["solar_power"],
+    }
+    try:
+        paths = {
+            "plan": Path(plan_gen.generate_plan(sample_spec, "debug-test")),
+            "model": Path(model_3d.generate_model(sample_spec, "debug-test")),
+            "schedule": Path(schedule_4d.generate_schedule(sample_spec, "debug-test")),
+        }
+    except (OSError, TypeError, ValueError, ArithmeticError) as error:
+        raise HTTPException(status_code=500, detail="Could not generate diagnostic artifacts") from error
+    urls = {
+        "plan": "/api/debug/artifacts/plan.svg",
+        "model": "/api/debug/artifacts/model.glb",
+        "schedule": "/api/debug/artifacts/schedule.json",
+    }
+    files = {
+        key: {"exists": path.is_file(), "bytes": path.stat().st_size if path.is_file() else 0, "path": path.name}
+        for key, path in paths.items()
+    }
+    return {
+        "status": "ok" if all(item["exists"] for item in files.values()) else "artifact-generation-failed",
+        "sample_spec": sample_spec,
+        "artifact_urls": urls,
+        "files": files,
+        "note": "Diagnostic concept artifacts only; no project was created or changed.",
+    }
+
+
+@app.get("/api/debug/artifacts/{artifact_name}")
+def get_debug_artifact(artifact_name: str, current_user: User = Depends(get_current_user)):
+    """Serve one fixed diagnostic artifact to an authenticated workspace user."""
+    del current_user
+    allowed = {
+        "plan.svg": (OUTPUT_DIR / "plan_debug-test.svg", "image/svg+xml"),
+        "model.glb": (OUTPUT_DIR / "model_debug-test.glb", "model/gltf-binary"),
+        "schedule.json": (OUTPUT_DIR / "schedule_debug-test.json", "application/json"),
+    }
+    artifact = allowed.get(artifact_name)
+    if artifact is None or not artifact[0].is_file():
+        raise HTTPException(status_code=404, detail="Diagnostic artifact not found; run POST /api/debug/generate-test first")
+    return FileResponse(artifact[0], media_type=artifact[1], filename=f"buildwise-debug-{artifact_name}")
 
 
 @app.get("/api/projects/{project_id}/artifacts/plan.svg")

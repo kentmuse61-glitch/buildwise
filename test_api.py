@@ -63,6 +63,52 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(self.client.get(f"/api/projects/{project['id']}", headers=self.headers).status_code, 404)
 
+    def test_design_workbench_delivery_and_authenticated_debug_artifacts(self):
+        generated = self.client.post("/api/project/generate", headers=self.headers, json={
+            "description": "A 2-storey, 3-bedroom home in Kumasi with 180 sqm total floor area and solar power.",
+            "location": "Kumasi",
+        })
+        self.assertEqual(generated.status_code, 200, generated.text)
+        project_id = generated.json()["id"]
+
+        workbench = self.client.get(f"/api/projects/{project_id}/workbench", headers=self.headers)
+        self.assertEqual(workbench.status_code, 200, workbench.text)
+        self.assertIn("quantity_takeoff", workbench.json())
+        self.assertIn("energy_planning", workbench.json())
+        self.assertIn("block_modules", workbench.json())
+        self.assertFalse(workbench.json()["design_studio"]["uses_custom_layout"])
+
+        design = self.client.put(f"/api/projects/{project_id}/design-studio", headers=self.headers, json={
+            "variant_name": "Courtyard test",
+            "active_floor": 1,
+            "rooms": [
+                {"id": "living-1", "label": "Living", "room_type": "living", "floor": 1, "x": 0, "y": 0, "width": 6, "depth": 5},
+                {"id": "kitchen-1", "label": "Kitchen", "room_type": "kitchen", "floor": 1, "x": 6, "y": 0, "width": 3.5, "depth": 3},
+            ],
+        })
+        self.assertEqual(design.status_code, 200, design.text)
+        self.assertTrue(design.json()["workbench"]["design_studio"]["uses_custom_layout"])
+        plan = self.client.get(f"/api/projects/{project_id}/artifacts/plan.svg", headers=self.headers)
+        self.assertIn("Living", plan.text)
+        self.assertIn("Kitchen", plan.text)
+
+        progress = self.client.put(f"/api/projects/{project_id}/delivery/progress", headers=self.headers, json={
+            "phase_key": "site-preparation", "progress_percent": 35, "status": "In progress", "note": "Brief review started",
+        })
+        self.assertEqual(progress.status_code, 200, progress.text)
+        self.assertEqual(progress.json()["workbench"]["delivery_tracking"]["phases"][0]["progress_percent"], 35)
+
+        unauthenticated_debug = self.client.post("/api/debug/generate-test")
+        self.assertEqual(unauthenticated_debug.status_code, 401)
+        debug = self.client.post("/api/debug/generate-test", headers=self.headers)
+        self.assertEqual(debug.status_code, 200, debug.text)
+        payload = debug.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertTrue(all(item["exists"] and item["bytes"] > 0 for item in payload["files"].values()))
+        debug_model = self.client.get(payload["artifact_urls"]["model"], headers=self.headers)
+        self.assertEqual(debug_model.status_code, 200)
+        self.assertEqual(debug_model.content[:4], b"glTF")
+
     def test_security_headers_are_present(self):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)

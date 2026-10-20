@@ -66,6 +66,25 @@ class ConstructionCoreTests(unittest.TestCase):
         self.assertIn("Visitor WC", svg)
         self.assertIn("not a code or permit approval", svg)
 
+    def test_custom_design_studio_rooms_are_used_in_svg(self):
+        generator = PlanGenerator()
+        svg = generator.build_svg({
+            "building_type": "residential",
+            "location": "Kumasi",
+            "floors": 2,
+            "area_sqm": 180,
+            "design_studio": {
+                "active_floor": 2,
+                "rooms": [
+                    {"id": "studio", "label": "Studio & review", "room_type": "living", "floor": 2, "x": 0, "y": 0, "width": 6, "depth": 5},
+                    {"id": "ground", "label": "Ground only", "room_type": "kitchen", "floor": 1, "x": 0, "y": 0, "width": 3, "depth": 3},
+                ],
+            },
+        })
+        self.assertIn("Studio &amp; review", svg)
+        self.assertNotIn("Ground only", svg)
+        self.assertIn("6.0 m × 5.0 m", svg)
+
     def test_glb_header_and_length(self):
         with tempfile.TemporaryDirectory() as directory:
             generator = Model3DGenerator(directory)

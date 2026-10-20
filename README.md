@@ -16,6 +16,8 @@ A Ghana-focused, early-stage construction planning workspace. A user writes a sh
 - High-level GHS estimate with an editable starter rate table and visible uncertainty range.
 - Contractor directory matcher. It starts **empty**; add and vet real listings before using it.
 - Responsive same-origin web UI and Render Blueprint configuration.
+- Original Design-to-Delivery Workbench: editable room blocks, visible QTO/block allowances, energy-planning prompts and project-owned delivery progress updates.
+- Authenticated fixed-ID diagnostic generation for plan, GLB and schedule artifacts.
 
 ## Run locally
 
@@ -77,6 +79,11 @@ Copy `.env.example` to `.env` and set:
 - `GET /api/projects/{id}/artifacts/plan.svg` — generated schematic SVG (authenticated).
 - `GET /api/projects/{id}/artifacts/model.glb` — generated massing model (authenticated).
 - `GET /api/projects/{id}/artifacts/schedule.json` — generated schedule (authenticated).
+- `GET /api/projects/{id}/workbench` — original Design Studio, QTO, energy and delivery summary (authenticated).
+- `PUT /api/projects/{id}/design-studio` — save bounded editable room blocks (authenticated).
+- `PUT /api/projects/{id}/delivery/progress` — record user-entered phase progress (authenticated; not a completion or payment certification).
+- `POST /api/debug/generate-test` — generate fixed-ID diagnostic plan, GLB and schedule artifacts (authenticated).
+- `GET /api/debug/artifacts/{plan.svg|model.glb|schedule.json}` — fetch a generated diagnostic artifact (authenticated).
 - `POST /api/contractors/match` — match directory records by city, budget and building type.
 - `GET /api/health` — application/database health.
 

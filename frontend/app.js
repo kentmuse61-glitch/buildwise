@@ -309,6 +309,7 @@ function projectDetailMarkup(project, embedded = false) {
       <div class="detail-column">
         <section class="panel"><div class="panel-heading"><div><h3>3D building massing</h3><p>Drag to orbit the generated GLB concept model. Use the download in a compatible 3D tool for further review.</p></div></div><div class="model-stage"><model-viewer id="model-viewer" camera-controls touch-action="pan-y" shadow-intensity="0.72" exposure="1" interaction-prompt="auto" loading="eager" reveal="auto" alt="Interactive 3D concept massing model"><span slot="poster" class="artifact-loading" id="model-loading">Preparing 3D concept…</span></model-viewer><canvas id="model-canvas" hidden data-floors="${Number(spec.floors || project.floors || 1)}" data-area="${Number(spec.area_sqm || project.area_sqm || 100)}" aria-label="Fallback schematic 3D building massing"></canvas><span class="artifact-loading" id="model-error" hidden>Could not load the GLB preview. You can still download the model.</span></div><div class="model-caption"><span>Concept massing only · no structural detail</span><button class="panel-link" type="button" data-action="download-model" data-project-id="${id}">Download GLB →</button></div></section>
         <section class="panel"><div class="panel-heading"><div><h3>Schematic floor plan</h3><p>Ground-floor room blocks · approximate footprint.</p></div><a class="panel-link" href="#" data-action="download-plan" data-project-id="${id}">Download SVG →</a></div><div class="plan-stage"><img id="plan-image" alt="Schematic concept floor plan" src="" /><span class="artifact-loading" id="plan-loading">Preparing plan…</span></div></section>
+        <section id="workbench-panel" class="panel workbench-panel"><div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Loading editable concept rooms, transparent take-off and delivery controls…</p></div></div><div class="artifact-loading">Preparing workbench…</div></section>
         <section class="panel"><div class="panel-heading"><div><h3>First-pass project schedule</h3><p>Sequential planning timeline with an indicative seasonal allowance.</p></div><span class="meta-pill">${Number(spec.floors || project.floors || 1)} floor${Number(spec.floors || project.floors || 1) === 1 ? "" : "s"}</span></div><div id="schedule-container"><div class="artifact-loading">Preparing schedule…</div></div></section>
       </div>
       <div class="detail-column secondary">
@@ -387,6 +388,99 @@ async function initProjectArtifacts(project) {
       scheduleContainer.innerHTML = `<div class="form-error">${escapeHtml(error.message)}</div>`;
     }
   }
+  await initWorkbench(project);
+}
+
+function studioRoomRow(room, index, activeFloor) {
+  const safeId = escapeHtml(room.id || `room-${index + 1}`);
+  return `<div class="studio-room-row" data-row-index="${Number(index)}"><input data-field="id" value="${safeId}" maxlength="64" aria-label="Room ID"><input data-field="label" value="${escapeHtml(room.label || `Room ${index + 1}`)}" maxlength="60" aria-label="Room name"><input data-field="room_type" value="${escapeHtml(room.type || room.room_type || "room")}" maxlength="40" aria-label="Room type"><input data-field="floor" type="number" min="1" max="50" value="${Number(room.floor || activeFloor)}" aria-label="Floor"><input data-field="x" type="number" min="0" max="1000" step="0.1" value="${Number(room.x || 0)}" aria-label="X position metres"><input data-field="y" type="number" min="0" max="1000" step="0.1" value="${Number(room.y || 0)}" aria-label="Y position metres"><input data-field="width" type="number" min="0.5" max="200" step="0.1" value="${Number(room.w || room.width || 3)}" aria-label="Width metres"><input data-field="depth" type="number" min="0.5" max="200" step="0.1" value="${Number(room.h || room.depth || 3)}" aria-label="Depth metres"><button type="button" class="button button-quiet studio-remove">Remove</button></div>`;
+}
+
+function workbenchMarkup(data) {
+  const design = data.design_studio || {};
+  const qto = data.quantity_takeoff || {};
+  const blocks = data.block_modules || {};
+  const energy = data.energy_planning || {};
+  const delivery = data.delivery_tracking || {};
+  const rooms = design.rooms || [];
+  const qtoRows = (qto.items || []).map((item) => `<tr><td>${escapeHtml(item.item)}</td><td>${Number(item.quantity || 0).toLocaleString("en-GH")} ${escapeHtml(item.unit || "")}</td><td>${escapeHtml(item.basis || "")}</td></tr>`).join("");
+  const phaseOptions = (delivery.phases || []).map((phase) => `<option value="${escapeHtml(phase.key)}">${escapeHtml(phase.phase)} · ${Number(phase.progress_percent || 0)}%</option>`).join("");
+  const phaseRows = (delivery.phases || []).map((phase) => `<tr><td>${escapeHtml(phase.phase)}</td><td><span class="progress-value">${Number(phase.progress_percent || 0)}%</span></td><td>${escapeHtml(phase.status || "Not started")}</td></tr>`).join("");
+  return `
+    <div class="workbench-summary"><span class="meta-pill">Original Buildwise workflow</span><span class="meta-pill">${escapeHtml(data.status || "concept-review-required")}</span></div>
+    <details class="studio-details" open><summary><strong>Design Studio</strong> · editable room blocks for floor ${Number(design.active_floor || 1)}</summary><p class="form-hint">Adjust room blocks in metres, then save to regenerate the schematic SVG plan. This remains a conceptual layout, not a construction drawing.</p><form id="design-studio-form"><label class="form-field compact-field"><span>Concept variant name</span><input id="studio-variant-name" value="${escapeHtml(design.uses_custom_layout ? "Working concept" : "Starter concept")}" maxlength="80"></label><div class="studio-grid-head"><span>ID</span><span>Room</span><span>Type</span><span>Floor</span><span>X m</span><span>Y m</span><span>Width m</span><span>Depth m</span><span></span></div><div id="studio-room-list">${rooms.map((room, index) => studioRoomRow(room, index, design.active_floor || 1)).join("")}</div><div class="studio-actions"><button id="studio-add-room" type="button" class="button button-secondary">＋ Add room</button><button type="submit" class="button button-primary">Save concept layout</button></div></form></details>
+    <details class="studio-details"><summary><strong>Transparent QTO & block modules</strong> · early-planning allowances</summary><table class="cost-table workbench-table"><thead><tr><th>Item</th><th>Quantity</th><th>Basis</th></tr></thead><tbody>${qtoRows}</tbody></table><div class="workbench-stats"><span><strong>${Number(blocks.estimated_blocks || 0).toLocaleString("en-GH")}</strong> conceptual blocks</span><span><strong>${Number(blocks.pallets_at_120_blocks || 0)}</strong> pallets at 120 blocks</span></div><div class="disclaimer-box">${escapeHtml(qto.disclaimer || "Review quantities professionally.")}</div></details>
+    <details class="studio-details"><summary><strong>Energy planning</strong> · review-first prompts</summary><div class="workbench-stats"><span><strong>${Number(energy.concept_pv_capacity_range_kwp?.[0] || 0)}–${Number(energy.concept_pv_capacity_range_kwp?.[1] || 0)} kWp</strong> concept PV range</span><span>${energy.solar_requested_in_brief ? "Solar noted in the brief" : "Solar not specified in the brief"}</span></div><ul class="compliance-list">${(energy.planning_prompts || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><div class="disclaimer-box">${escapeHtml(energy.disclaimer || "Professional electrical review required.")}</div></details>
+    <details class="studio-details"><summary><strong>Delivery tracker</strong> · user-entered progress</summary><div class="workbench-stats"><span><strong>${Number(delivery.overall_progress_percent || 0)}%</strong> duration-weighted progress</span><span>Not a quality, payment or completion certificate</span></div><table class="cost-table workbench-table"><thead><tr><th>Planned phase</th><th>Progress</th><th>Status</th></tr></thead><tbody>${phaseRows}</tbody></table><form id="delivery-progress-form" class="progress-form"><label class="form-field compact-field"><span>Phase</span><select id="delivery-phase">${phaseOptions}</select></label><label class="form-field compact-field"><span>Progress %</span><input id="delivery-percent" type="number" min="0" max="100" value="0"></label><label class="form-field compact-field"><span>Status</span><select id="delivery-status"><option>Not started</option><option>In progress</option><option>Blocked</option><option>Complete</option></select></label><label class="form-field compact-field"><span>Update note</span><input id="delivery-note" maxlength="800" placeholder="Optional site update"></label><button class="button button-primary" type="submit">Save progress</button></form><div class="disclaimer-box">${escapeHtml(delivery.disclaimer || "User-entered progress only.")}</div></details>
+    <details class="studio-details"><summary><strong>Drawing, site, engineering & BIM boundaries</strong></summary><p><strong>Drawing review:</strong> ${escapeHtml(data.drawing_review?.status || "No source drawing uploaded")}</p><p><strong>Seismic/site data:</strong> ${escapeHtml(data.site_and_engineering?.seismic_visualization_status || "No dataset supplied")}</p><p><strong>IFC/BIM:</strong> ${escapeHtml(data.bim_interoperability?.ifc_import_status || "Not enabled")}</p><div class="disclaimer-box">${escapeHtml(data.method_note || "Professional review remains required.")}</div></details>`;
+}
+
+async function initWorkbench(project) {
+  const panel = $("#workbench-panel");
+  const id = Number(project.id || project.project_id || project.db_id);
+  if (!panel || !id) return;
+  try {
+    const data = await api(`/api/projects/${id}/workbench`);
+    panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Editable concept geometry, transparent quantities and controlled progress records.</p></div></div>${workbenchMarkup(data)}`;
+    initDesignStudio(project, data.design_studio || {});
+    initDeliveryTracker(project);
+  } catch (error) {
+    panel.innerHTML = `<div class="panel-heading"><div><h3>Design-to-delivery workbench</h3><p>Could not load this project workspace.</p></div></div><div class="form-error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function initDesignStudio(project, design) {
+  const form = $("#design-studio-form");
+  const roomList = $("#studio-room-list");
+  const add = $("#studio-add-room");
+  if (!form || !roomList || !add) return;
+  add.addEventListener("click", () => {
+    const index = roomList.querySelectorAll(".studio-room-row").length;
+    roomList.insertAdjacentHTML("beforeend", studioRoomRow({ id: `room-${Date.now()}`, label: `Room ${index + 1}`, room_type: "room", floor: design.active_floor || 1, x: 0, y: 0, width: 3, depth: 3 }, index, design.active_floor || 1));
+  });
+  roomList.addEventListener("click", (event) => {
+    const remove = event.target.closest(".studio-remove");
+    if (remove && roomList.querySelectorAll(".studio-room-row").length > 1) remove.closest(".studio-room-row").remove();
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const rooms = [...roomList.querySelectorAll(".studio-room-row")].map((row) => {
+      const get = (field) => row.querySelector(`[data-field="${field}"]`).value;
+      return { id: get("id").trim(), label: get("label").trim(), room_type: get("room_type").trim(), floor: Number(get("floor")), x: Number(get("x")), y: Number(get("y")), width: Number(get("width")), depth: Number(get("depth")) };
+    });
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      const result = await api(`/api/projects/${Number(project.id)}/design-studio`, { method: "PUT", body: { active_floor: Number(design.active_floor || 1), variant_name: $("#studio-variant-name").value.trim() || "Working concept", rooms } });
+      project.spec = result.spec;
+      if (state.currentProject && Number(state.currentProject.id) === Number(project.id)) state.currentProject.spec = result.spec;
+      showToast("Concept layout saved. The SVG plan has been regenerated.");
+      await initProjectArtifacts(project);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      submit.disabled = false;
+    }
+  });
+}
+
+function initDeliveryTracker(project) {
+  const form = $("#delivery-progress-form");
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      await api(`/api/projects/${Number(project.id)}/delivery/progress`, { method: "PUT", body: { phase_key: $("#delivery-phase").value, progress_percent: Number($("#delivery-percent").value), status: $("#delivery-status").value, note: $("#delivery-note").value.trim() } });
+      showToast("Delivery progress saved as a project update.");
+      await initWorkbench(project);
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      submit.disabled = false;
+    }
+  });
 }
 
 function timelineMarkup(schedule) {
