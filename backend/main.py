@@ -67,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.2.9",
+    version="1.3.0",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 

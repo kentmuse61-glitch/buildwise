@@ -459,3 +459,28 @@ a { color: inherit; }
 .concept-style-button { min-height: 24px; border: 1px solid #31594a; border-radius: 4px; padding: 3px 7px; background: #10251e; color: #a9c6b7; font-size: 8px; font-weight: 800; cursor: pointer; }
 .concept-style-button:hover { border-color: #73bd99; color: #f3faf5; }
 .concept-style-button.active { border-color: #78cba1; background: #dcefe3; color: #143426; }
+
+/* A concept drawing should stay readable before any dashboard detail.  The
+   three-column review board is reserved for a true desktop canvas; tablet and
+   phone layouts give the drawing/model a larger uninterrupted surface. */
+@media (max-width: 1180px) and (min-width: 701px) {
+  .studio-viewport,
+  .studio-viewport[data-studio-mode="2d"],
+  .studio-viewport[data-studio-mode="3d"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .studio-viewport[data-studio-mode="2d"],
+  .studio-viewport[data-studio-mode="3d"] { grid-template-columns: minmax(0, 1fr); }
+  .studio-inspector { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(145px, .6fr) minmax(220px, 1.15fr) minmax(170px, .85fr); gap: 12px; align-items: start; border-top: 1px solid #214438; }
+  .studio-inspector-heading, .studio-program-stats { grid-column: 1; }
+  .studio-program-stats { margin: 0; }
+  .studio-program-list { grid-column: 2; grid-row: 1 / span 2; max-height: 154px; }
+  .studio-market-direction { grid-column: 3; grid-row: 1; margin: 0; padding: 0; border-top: 0; }
+  .studio-review-note { grid-column: 3; grid-row: 2; margin: 0; }
+  .studio-canvas-pane .plan-stage, .studio-canvas-pane .model-stage { min-height: 340px; height: 340px; }
+}
+@media (max-width: 700px) {
+  .studio-canvas-pane { padding: 12px; }
+  .studio-canvas-pane .plan-stage { min-height: 0; aspect-ratio: 1120 / 820; }
+  .studio-canvas-pane .model-stage { height: min(78vw, 370px); min-height: 248px; }
+  .concept-style-tabs { margin-top: 0; }
+  .concept-style-button { flex: 1 1 auto; min-height: 29px; padding: 4px 6px; font-size: 8px; }
+}
