@@ -11,3 +11,21 @@ Buildwise GH vendors `frontend/vendor/model-viewer.min.js` to provide an in-brow
 The distributed bundle retains its own source/license headers, including notices for bundled components. No third-party model assets are bundled with Buildwise GH.
 
 This library only displays a generated concept massing model. It does not make the model an architectural, structural, engineering, or permit drawing.
+
+## `manifold3d` 3.5.4
+
+Buildwise GH uses the Python bindings to Manifold only to create watertight visual solids for generated concept-massing GLB files.
+
+- Upstream project: <https://github.com/elalish/manifold>
+- Package: `manifold3d` 3.5.4
+- Package license: Apache-2.0
+
+## `trimesh` 5.1.1
+
+Buildwise GH uses Trimesh only to serialize the generated concept-solid scene as a standard GLB.
+
+- Upstream project: <https://github.com/mikedh/trimesh>
+- Package: `trimesh` 5.1.1
+- Package license: MIT
+
+These dependencies improve visual concept-model geometry and interchange only. They do not supply construction details, professional certification, code determinations, or permit readiness.

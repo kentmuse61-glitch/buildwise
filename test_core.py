@@ -80,6 +80,12 @@ class ConstructionCoreTests(unittest.TestCase):
             self.assertEqual(json_type, 0x4E4F534A)
             document = json.loads(data[20:20 + json_length].decode("utf-8"))
             self.assertEqual(document["asset"]["version"], "2.0")
+            self.assertGreaterEqual(len(document["nodes"]), 10)
+            self.assertTrue(any(node.get("name") == "foundation_slab_concept" for node in document["nodes"]))
+            self.assertTrue(any(node.get("name") == "roof_slab_concept" for node in document["nodes"]))
+            self.assertTrue(any("COLOR_0" in mesh["primitives"][0]["attributes"] for mesh in document["meshes"]))
+            self.assertEqual(document["asset"]["extras"]["buildwise"]["modelPurpose"], "early-planning concept massing only")
+            self.assertTrue(all("target" in buffer_view for buffer_view in document["bufferViews"]))
 
     def test_schedule_has_phases_and_deterministic_start(self):
         with tempfile.TemporaryDirectory() as directory:

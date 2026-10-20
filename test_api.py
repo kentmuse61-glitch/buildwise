@@ -53,6 +53,12 @@ class ProjectApiTests(unittest.TestCase):
         self.assertIn("Indicative total", csv_response.text)
         self.assertTrue(csv_response.headers["content-type"].startswith("text/csv"))
 
+        model_response = self.client.get(f"/api/projects/{project['id']}/artifacts/model.glb", headers=self.headers)
+        self.assertEqual(model_response.status_code, 200, model_response.text)
+        self.assertTrue(model_response.headers["content-type"].startswith("model/gltf-binary"))
+        self.assertEqual(model_response.content[:4], b"glTF")
+        self.assertEqual(self.client.get(f"/api/projects/{project['id']}/artifacts/model.glb").status_code, 401)
+
         deleted = self.client.delete(f"/api/projects/{project['id']}", headers=self.headers)
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(self.client.get(f"/api/projects/{project['id']}", headers=self.headers).status_code, 404)

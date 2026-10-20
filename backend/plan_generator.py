@@ -8,7 +8,6 @@ import math
 import os
 import re
 from typing import Any
-from xml.dom import minidom
 
 logger = logging.getLogger(__name__)
 
@@ -124,35 +123,33 @@ class PlanGenerator:
         offset_x = (canvas_width - total_width * scale) / 2
         offset_y = margin_top + (available_height - total_height * scale) / 2
 
-        doc = minidom.Document()
-        svg = doc.createElement("svg")
-        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg")
-        svg.setAttribute("width", str(canvas_width))
-        svg.setAttribute("height", str(canvas_height))
-        svg.setAttribute("viewBox", f"0 0 {canvas_width} {canvas_height}")
-        svg.setAttribute("role", "img")
-        svg.setAttribute("aria-label", "Schematic concept floor plan")
-        doc.appendChild(svg)
+        # Build SVG markup directly from a fixed element vocabulary. User-derived
+        # content is escaped before insertion; this generator never parses XML.
+        # Avoiding XML parser APIs also prevents XML entity-expansion attack paths.
+        parts: list[str] = []
 
-        def element(name: str, attrs: dict[str, str] | None = None, text: str | None = None):
-            node = doc.createElement(name)
-            for key, value in (attrs or {}).items():
-                node.setAttribute(key, value)
-            if text is not None:
-                node.appendChild(doc.createTextNode(text))
-            svg.appendChild(node)
-            return node
+        def element(name: str, attrs: dict[str, str] | None = None, text: str | None = None) -> None:
+            attributes = "".join(
+                f' {key}="{html.escape(str(value), quote=True)}"'
+                for key, value in (attrs or {}).items()
+            )
+            if text is None:
+                parts.append(f"<{name}{attributes}/>")
+            else:
+                parts.append(f"<{name}{attributes}>{html.escape(str(text), quote=False)}</{name}>")
 
-        style = doc.createElement("style")
-        style.appendChild(doc.createTextNode("""
+        parts.append(
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas_width}" height="{canvas_height}" '
+            f'viewBox="0 0 {canvas_width} {canvas_height}" role="img" aria-label="Schematic concept floor plan">'
+        )
+        parts.append("""<style>
             .room { stroke: #53645f; stroke-width: 2; vector-effect: non-scaling-stroke; }
             .wall { stroke: #253c35; stroke-width: 4; fill: none; vector-effect: non-scaling-stroke; }
             .label { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: 700; fill: #24332e; }
             .dimension { font-family: Arial, Helvetica, sans-serif; font-size: 11px; fill: #60716b; }
             .title { font-family: Arial, Helvetica, sans-serif; font-size: 22px; font-weight: 700; fill: #24332e; }
             .subtitle { font-family: Arial, Helvetica, sans-serif; font-size: 12px; fill: #687974; }
-        """))
-        svg.appendChild(style)
+        </style>""")
         element("rect", {"x": "0", "y": "0", "width": str(canvas_width), "height": str(canvas_height), "fill": "#fbfcfa"})
         element("text", {"x": str(canvas_width // 2), "y": "42", "text-anchor": "middle", "class": "title"}, f"{building_type} concept plan")
         element(
@@ -210,9 +207,8 @@ class PlanGenerator:
             {"x": "38", "y": "667", "class": "dimension"},
             "Concept layout only — not for permits, construction, structural design, or setting out.",
         )
-        # Element serialization avoids an XML declaration, preserving the API's
-        # existing SVG response contract.
-        return svg.toprettyxml(indent="  ")
+        parts.append("</svg>")
+        return "\n".join(parts)
 
     def _layout_rooms(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Choose the residential planning template or a neutral room grid."""

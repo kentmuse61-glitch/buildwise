@@ -7,9 +7,12 @@ This roadmap distinguishes completed hardening from larger changes that require 
 - **Interactive 3D preview:** `@google/model-viewer` 4.2.0, vendored locally and used only for authenticated, generated GLB concept models.
   - Upstream: https://github.com/google/model-viewer
   - License: Apache-2.0
-- **GLB quality gate:** the generated 3-floor concept model was validated with Khronos glTF Validator: zero errors and zero warnings.
+- **Richer 3D concept output:** `manifold3d` creates watertight visual wall, slab, roof, balcony, and facade-opening components; `trimesh` writes the private concept scene as GLB. Generated models carry immutable concept-only metadata and retain a dependency-free fallback GLB.
+  - Upstream: https://github.com/elalish/manifold (Apache-2.0) and https://github.com/mikedh/trimesh (MIT)
+- **GLB quality gate:** the generated concept model was validated with Khronos glTF Validator: zero errors, warnings, information messages, and hints.
   - Upstream: https://github.com/KhronosGroup/glTF-Validator
   - License: Apache-2.0
+- **Safe SVG output:** the plan generator now uses a fixed SVG vocabulary and escapes all dynamic content without using an XML parser.
 - **Dependency remediation:** migrated JWT implementation from `python-jose` to `PyJWT`, upgraded FastAPI/Starlette through FastAPI 0.146.0, upgraded `python-dotenv`, and removed unused multipart parsing.
   - `pip-audit -r requirements.txt` result: no known vulnerabilities.
 - **Security headers:** content-type sniffing, framing, referrer, and browser-permission protections are set on every response.
