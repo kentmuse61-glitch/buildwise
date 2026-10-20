@@ -67,19 +67,26 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Buildwise GH",
-    version="1.3.0",
+    version="1.3.1",
     description="Early-stage design-to-delivery planning tools. Generated outputs are illustrative, not professional approvals.",
 )
 
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    """Add low-risk browser protections without blocking same-origin artifacts."""
+    """Add browser protections and prevent stale application-shell assets."""
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+
+    # The mobile screenshots exposed a stale HTML/JS/CSS shell after a Render
+    # deploy.  The concept artifacts may be cached independently, but the app
+    # shell must always revalidate so a visitor gets the matching visual UI.
+    path = request.url.path
+    if path in {"/", "/index.html", "/app.js", "/styles.css", "/viewer3d.js"}:
+        response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
     return response
 
 

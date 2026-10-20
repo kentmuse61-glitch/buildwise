@@ -271,12 +271,16 @@ class ProjectApiTests(unittest.TestCase):
         self.assertIn("not an international compliance", selected["not_claimed"].lower())
         self.assertIn("no plan", payload["note"].lower())
 
-    def test_security_headers_are_present(self):
+    def test_security_headers_and_application_shell_revalidation_are_present(self):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
         self.assertEqual(response.headers["x-frame-options"], "DENY")
         self.assertEqual(response.headers["referrer-policy"], "strict-origin-when-cross-origin")
+        for path in ("/", "/index.html", "/app.js", "/styles.css", "/viewer3d.js"):
+            shell = self.client.get(path)
+            self.assertEqual(shell.status_code, 200, path)
+            self.assertEqual(shell.headers["cache-control"], "no-store, max-age=0, must-revalidate")
 
     def test_professional_handoff_artifacts_are_private_and_escaped(self):
         response = self.client.post("/api/project/generate", headers=self.headers, json={
